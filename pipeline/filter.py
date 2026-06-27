@@ -46,7 +46,10 @@ def keep(story: Story, cfg: Config, db: Db) -> bool:
         log.debug("reject %s: word_count=%d outside [%d,%d]",
                   story.id, story.word_count, cfg.filter.min_words, cfg.filter.max_words)
         return False
-    if story.score < cfg.filter.min_score:
+    if cfg.reddit.mode == "rss":
+        # RSS feed lacks score; rely on Reddit's top-sorted ordering instead.
+        pass
+    elif story.score < cfg.filter.min_score:
         log.debug("reject %s: score=%d < %d", story.id, story.score, cfg.filter.min_score)
         return False
     if cfg.filter.profanity_mode == "strict":

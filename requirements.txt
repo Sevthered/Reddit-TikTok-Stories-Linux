@@ -1,8 +1,9 @@
 # Phase 0–1 deps
 requests==2.32.3
+praw==7.8.1
+edge-tts==7.2.8
 
 # Deferred — uncomment as later phases land:
-# edge-tts==7.0.0          # Phase 2 (TTS)
 # kokoro==0.7.16           # Phase 2 (offline TTS fallback)
 # mlx-whisper==0.4.2       # Phase 5 (Apple-Silicon transcription)
 # faster-whisper==1.0.3    # Phase 5 (CPU fallback)

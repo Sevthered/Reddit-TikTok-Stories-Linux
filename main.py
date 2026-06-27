@@ -4,11 +4,15 @@ import argparse
 import logging
 import sys
 
+from pathlib import Path
+
 from core.config import ConfigError, load_config
 from core.db import Db
 from core.logging_setup import setup_logging
+from pipeline.clean import normalize
 from pipeline.filter import keep
 from pipeline.scrape import fetch_candidates
+from pipeline.tts import synthesize
 
 log = logging.getLogger("main")
 
@@ -67,6 +71,19 @@ def main() -> int:
             print(f"URL   : https://reddit.com{story.permalink}")
             print(f"PREVIEW: {_preview(story.selftext)}")
             print("=" * 72)
+
+            work_dir = Path("data/temp") / story.id
+            work_dir.mkdir(parents=True, exist_ok=True)
+            spoken = normalize(story, cfg)
+            (work_dir / "spoken.txt").write_text(spoken, encoding="utf-8")
+            log.info("clean: %d chars / %d words ready for tts",
+                     len(spoken), len(spoken.split()))
+
+            audio = synthesize(spoken, cfg, work_dir)
+            print(f"AUDIO : {audio.path}  duration={audio.duration_s:.2f}s  too_long={audio.too_long}")
+            if audio.too_long:
+                log.warning("audio exceeds target_max_seconds=%d — skipping in later phases",
+                            cfg.video.target_max_seconds)
 
         if picked == 0:
             log.warning("no candidates passed filter (all used / out-of-range / NSFW / low-score / profane)")

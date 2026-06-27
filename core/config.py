@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,11 +12,14 @@ class ConfigError(ValueError):
 
 @dataclass(frozen=True)
 class RedditCfg:
+    mode: str
     subreddits: list[str]
     listing: str
     time_filter: str
     limit: int
     user_agent: str
+    client_id: str | None
+    client_secret: str | None
 
 
 @dataclass(frozen=True)
@@ -97,6 +101,7 @@ class Config:
     run: RunCfg
 
 
+_REDDIT_MODES = {"json", "praw", "rss"}
 _LISTINGS = {"top", "hot", "new"}
 _TIME_FILTERS = {"hour", "day", "week", "month", "year", "all"}
 _PROFANITY_MODES = {"off", "soft", "strict"}
@@ -116,12 +121,29 @@ def _require(d: dict, key: str, section: str):
     return d[key]
 
 
+def _load_dotenv(path: str | Path = ".env") -> None:
+    p = Path(path)
+    if not p.exists():
+        return
+    for line in p.read_text(encoding="utf-8").splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or "=" not in s:
+            continue
+        k, _, v = s.partition("=")
+        k = k.strip()
+        v = v.strip().strip('"').strip("'")
+        if k and k not in os.environ:
+            os.environ[k] = v
+
+
 def load_config(path: str | Path = "config.toml") -> Config:
     p = Path(path)
     if not p.exists():
         raise ConfigError(f"config file not found: {p}")
     with p.open("rb") as f:
         raw = tomllib.load(f)
+
+    _load_dotenv()
 
     r = _section(raw, "reddit")
     user_agent = _require(r, "user_agent", "reddit")
@@ -130,6 +152,9 @@ def load_config(path: str | Path = "config.toml") -> Config:
             "reddit.user_agent still contains 'CHANGE_ME' — set a real handle "
             "(e.g. 'Reddit-Story-Bot/1.0 (by /u/yourname)'). Reddit 403s generic UAs."
         )
+    mode = r.get("mode", "json")
+    if mode not in _REDDIT_MODES:
+        raise ConfigError(f"reddit.mode must be one of {_REDDIT_MODES}, got {mode!r}")
     listing = _require(r, "listing", "reddit")
     if listing not in _LISTINGS:
         raise ConfigError(f"reddit.listing must be one of {_LISTINGS}, got {listing!r}")
@@ -142,7 +167,15 @@ def load_config(path: str | Path = "config.toml") -> Config:
     limit = int(_require(r, "limit", "reddit"))
     if limit <= 0:
         raise ConfigError("reddit.limit must be > 0")
-    reddit = RedditCfg(subs, listing, time_filter, limit, user_agent)
+
+    client_id = os.environ.get("REDDIT_CLIENT_ID") or None
+    client_secret = os.environ.get("REDDIT_CLIENT_SECRET") or None
+    if mode == "praw" and not (client_id and client_secret):
+        raise ConfigError(
+            "reddit.mode='praw' requires REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET in .env. "
+            "Create a 'script' app at https://www.reddit.com/prefs/apps."
+        )
+    reddit = RedditCfg(mode, subs, listing, time_filter, limit, user_agent, client_id, client_secret)
 
     f_ = _section(raw, "filter")
     profanity_mode = _require(f_, "profanity_mode", "filter")
