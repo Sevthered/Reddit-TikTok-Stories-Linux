@@ -1,0 +1,17 @@
+.env
+data/
+logs/
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Obsidian vault — keep wiki/ and .raw/ tracked, exclude volatile editor state
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.smart-connections/
+.obsidian-git-data
+.trash/

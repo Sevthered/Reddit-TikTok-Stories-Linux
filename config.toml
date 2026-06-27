@@ -1,0 +1,56 @@
+[reddit]
+subreddits   = ["tifu", "AmItheAsshole", "stories", "confession", "offmychest"]
+listing      = "top"          # top | hot | new
+time_filter  = "week"         # hour|day|week|month|year|all (top only)
+limit        = 25             # posts fetched per subreddit per run
+user_agent   = "AutomatedTikTokBot/1.0 (contact: sebgoncre@gmail.com)"
+
+[filter]
+min_words      = 80
+max_words      = 600
+min_score      = 500
+allow_nsfw     = false
+profanity_mode = "soft"        # off | soft (mask) | strict (skip post)
+
+[tts]
+engine = "edge"                # edge | kokoro
+voice  = "en-US-GuyNeural"
+rate   = "+8%"
+pause_between_sentences_ms = 120
+
+[whisper]
+backend    = "mlx"             # mlx | faster
+model      = "small.en"
+word_level = true
+
+[captions]
+font          = "Arial Black"
+font_size     = 22
+primary_color = "&H00FFFFFF"
+highlight     = "&H0000FFFF"
+outline       = 3
+words_per_cue = 1
+margin_v      = 360
+
+[background]
+source_urls = ["https://www.youtube.com/watch?v=CHANGE_ME"]
+cache_dir   = "data/backgrounds"
+audio_volume = 0.0
+
+[video]
+width = 1080
+height = 1920
+fps = 30
+video_bitrate = "10M"
+audio_bitrate = "192k"
+target_max_seconds = 90
+
+[upload]
+platform   = "tiktok"
+review_gate = true
+cookies_file = "data/cookies/tiktok_cookies.txt"
+caption_template = "{title} 😳 #reddit #story #storytime #fyp"
+schedule_minutes_apart = 0
+
+[run]
+videos_per_run = 1
