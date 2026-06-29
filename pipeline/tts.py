@@ -6,7 +6,6 @@ import logging
 import re
 import shutil
 import subprocess
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -73,7 +72,7 @@ def _ffprobe_duration_s(path: Path) -> float:
 def _make_silence(out_path: Path, ms: int) -> None:
     sec = max(0.001, ms / 1000.0)
     cmd = [
-        "ffmpeg", "-y", "-f", "lavfi", "-i", f"anullsrc=r=24000:cl=mono",
+        "ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono",
         "-t", f"{sec:.3f}", "-q:a", "9", "-acodec", "libmp3lame", str(out_path),
     ]
     subprocess.run(cmd, check=True, capture_output=True)
