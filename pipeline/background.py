@@ -4,13 +4,13 @@ import json
 import logging
 import random
 import re
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from core.config import Config
+from core.ffmpeg import which_ffmpeg, which_ffprobe
 
 log = logging.getLogger(__name__)
 
@@ -48,27 +48,9 @@ def _yt_dlp_cmd() -> list[str]:
     return [sys.executable, "-m", "yt_dlp"]
 
 
-_FFMPEG_FULL_BIN = Path("/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg")
-_FFPROBE_FULL_BIN = Path("/opt/homebrew/opt/ffmpeg-full/bin/ffprobe")
-
-
-def _which_ffmpeg() -> str:
-    """Prefer ffmpeg-full (keg-only, includes libass for ASS subtitle burn-in)
-    over the plain ffmpeg brew formula."""
-    if _FFMPEG_FULL_BIN.exists():
-        return str(_FFMPEG_FULL_BIN)
-    return shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
-
-
-def _which_ffprobe() -> str:
-    if _FFPROBE_FULL_BIN.exists():
-        return str(_FFPROBE_FULL_BIN)
-    return shutil.which("ffprobe") or "/opt/homebrew/bin/ffprobe"
-
-
 def _ffprobe_duration_s(path: Path) -> float:
     cmd = [
-        _which_ffprobe(), "-v", "error", "-print_format", "json",
+        which_ffprobe(), "-v", "error", "-print_format", "json",
         "-show_entries", "format=duration", str(path),
     ]
     out = subprocess.check_output(cmd, text=True)
@@ -150,7 +132,7 @@ def make_clip(
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
-        _which_ffmpeg(), "-y",
+        which_ffmpeg(), "-y",
         "-ss", f"{start_s:.3f}",
         "-i", str(bg_path),
         "-t", f"{duration_s:.3f}",
