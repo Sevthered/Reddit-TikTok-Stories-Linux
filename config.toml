@@ -27,13 +27,15 @@ model      = "small.en"
 word_level = true
 
 [captions]
-font          = "Arial Black"
-font_size     = 22
-primary_color = "&H00FFFFFF"
-highlight     = "&H0000FFFF"
-outline       = 3
-words_per_cue = 1
-margin_v      = 360
+font           = "Arial Black"
+font_size      = 80               # sized for 1080x1920 PlayRes; reference TikToks land near 60-90
+primary_color  = "&H00FFFFFF"
+highlight      = "&H0000FFFF"
+outline        = 6                # heavier outline for legibility over busy gameplay
+words_per_cue  = 2                # examples mix 1-3; 2 is a good middle ground
+margin_v       = 860              # vertical center on 1920h frame (per caption-style decision)
+case           = "upper"          # upper | lower | preserve
+highlight_mode = "color"          # color | box (box deferred)
 
 [background]
 # Verified via research 2026-06-29 (see decisions/background-source-shortlist).

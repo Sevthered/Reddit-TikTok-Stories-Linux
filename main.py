@@ -10,9 +10,11 @@ from core.config import ConfigError, load_config
 from core.db import Db
 from core.logging_setup import setup_logging
 from pipeline.background import ensure_cached, make_clip, pick_random_cached
+from pipeline.captions import build_ass
 from pipeline.clean import normalize
 from pipeline.filter import keep
 from pipeline.scrape import fetch_candidates
+from pipeline.transcribe import transcribe
 from pipeline.tts import synthesize
 
 log = logging.getLogger("main")
@@ -93,6 +95,10 @@ def main() -> int:
             bg_path = pick_random_cached(bgs)
             clip = make_clip(bg_path, audio.duration_s, cfg, work_dir / "bg.mp4")
             print(f"BG    : {clip.source.name} @ {clip.start_s:.2f}s -> {clip.path}")
+
+            words = transcribe(audio.path, cfg)
+            ass_path = build_ass(words, cfg, work_dir / "captions.ass")
+            print(f"CAPS  : {len(words)} words -> {ass_path}")
 
             picked += 1
             print(f"PICKED #{picked}: {story.id}")

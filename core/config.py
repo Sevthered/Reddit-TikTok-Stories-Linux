@@ -56,6 +56,8 @@ class CaptionsCfg:
     outline: int
     words_per_cue: int
     margin_v: int
+    case: str
+    highlight_mode: str
 
 
 @dataclass(frozen=True)
@@ -107,6 +109,8 @@ _LISTINGS = {"top", "hot", "new"}
 _TIME_FILTERS = {"hour", "day", "week", "month", "year", "all"}
 _PROFANITY_MODES = {"off", "soft", "strict"}
 _CONFUSABLE_MODES = {"off", "sanitize", "strict"}
+_CAPTION_CASES = {"upper", "lower", "preserve"}
+_HIGHLIGHT_MODES = {"color", "box"}
 _TTS_ENGINES = {"edge", "kokoro"}
 _WHISPER_BACKENDS = {"mlx", "faster"}
 
@@ -219,6 +223,12 @@ def load_config(path: str | Path = "config.toml") -> Config:
     )
 
     c = _section(raw, "captions")
+    case = c.get("case", "upper")
+    if case not in _CAPTION_CASES:
+        raise ConfigError(f"captions.case must be one of {_CAPTION_CASES}, got {case!r}")
+    highlight_mode = c.get("highlight_mode", "color")
+    if highlight_mode not in _HIGHLIGHT_MODES:
+        raise ConfigError(f"captions.highlight_mode must be one of {_HIGHLIGHT_MODES}, got {highlight_mode!r}")
     captions = CaptionsCfg(
         font=_require(c, "font", "captions"),
         font_size=int(_require(c, "font_size", "captions")),
@@ -227,6 +237,8 @@ def load_config(path: str | Path = "config.toml") -> Config:
         outline=int(_require(c, "outline", "captions")),
         words_per_cue=int(_require(c, "words_per_cue", "captions")),
         margin_v=int(_require(c, "margin_v", "captions")),
+        case=case,
+        highlight_mode=highlight_mode,
     )
 
     b = _section(raw, "background")

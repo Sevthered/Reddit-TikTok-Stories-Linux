@@ -6,6 +6,7 @@ import random
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,15 +41,28 @@ def _video_id(url: str) -> str:
     return m.group(1)
 
 
-def _which_yt_dlp() -> str:
-    return shutil.which("yt-dlp") or "yt-dlp"
+def _yt_dlp_cmd() -> list[str]:
+    """Invoke yt-dlp via the current interpreter so we don't depend on PATH
+    containing ./venv/bin (which isn't activated when running via
+    `./venv/bin/python main.py`)."""
+    return [sys.executable, "-m", "yt_dlp"]
+
+
+_FFMPEG_FULL_BIN = Path("/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg")
+_FFPROBE_FULL_BIN = Path("/opt/homebrew/opt/ffmpeg-full/bin/ffprobe")
 
 
 def _which_ffmpeg() -> str:
+    """Prefer ffmpeg-full (keg-only, includes libass for ASS subtitle burn-in)
+    over the plain ffmpeg brew formula."""
+    if _FFMPEG_FULL_BIN.exists():
+        return str(_FFMPEG_FULL_BIN)
     return shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
 
 
 def _which_ffprobe() -> str:
+    if _FFPROBE_FULL_BIN.exists():
+        return str(_FFPROBE_FULL_BIN)
     return shutil.which("ffprobe") or "/opt/homebrew/bin/ffprobe"
 
 
@@ -77,8 +91,7 @@ def ensure_cached(cfg: Config) -> list[Path]:
             continue
 
         log.info("downloading background %s -> %s", url, target)
-        cmd = [
-            _which_yt_dlp(),
+        cmd = _yt_dlp_cmd() + [
             "-f", _YTDLP_FORMAT,
             "--merge-output-format", "mp4",
             "--no-playlist",
