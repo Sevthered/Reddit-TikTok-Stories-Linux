@@ -83,17 +83,61 @@ def _expand_abbreviations(text: str) -> str:
     return text
 
 
-def _mask_word(w: str) -> str:
-    # Keep first letter, replace rest with asterisks of the same length.
-    if len(w) <= 1:
-        return w
-    return w[0] + "*" * (len(w) - 1)
+# Euphemism swap for profanity in `soft` mode. Asterisk masking (the previous
+# behavior) failed in practice: edge-tts read "f*****" as the letter F followed
+# by silence, sounding broken on the final video. Mapping to TTS-safe synonyms
+# preserves cadence and intent without tripping TikTok content filters.
+_EUPHEMISMS: dict[str, str] = {
+    "fuck": "freak", "fucking": "freaking", "fucked": "freaked", "fucker": "jerk",
+    "shit": "crap", "shitty": "lousy", "bullshit": "nonsense",
+    "bitch": "jerk", "bitches": "jerks",
+    "cunt": "jerk",
+    "asshole": "jerk", "assholes": "jerks",
+    "ass": "behind",
+    "dick": "jerk", "dicks": "jerks",
+    "pussy": "wimp",
+    "cock": "jerk", "cocks": "jerks",
+    "whore": "creep", "whores": "creeps",
+    "slut": "creep", "sluts": "creeps",
+    "bastard": "jerk",
+    "retard": "fool", "retarded": "foolish",
+    # Slurs swapped to neutral nouns; strict mode is the correct way to reject
+    # these posts entirely.
+    "nigger": "person", "nigga": "person", "faggot": "person", "fag": "person",
+}
 
 
-def _soft_mask_profanity(text: str) -> str:
+# Edge-tts Guy Neural mangles a small set of words by dropping or merging
+# phonemes. Force the longer / less-ambiguous form before synthesis.
+_TTS_HOMOGRAPHS: dict[str, str] = {
+    "butt": "buttocks",     # otherwise reads as "but" (conjunction)
+    "butts": "buttocks",
+}
+
+
+def _preserve_case(orig: str, repl: str) -> str:
+    if not orig or not repl:
+        return repl
+    if orig.isupper():
+        return repl.upper()
+    if orig[0].isupper():
+        return repl[0].upper() + repl[1:]
+    return repl
+
+
+def _soft_replace_profanity(text: str) -> str:
     def repl(m: re.Match[str]) -> str:
         w = m.group(0)
-        return _mask_word(w) if w.lower() in PROFANITY else w
+        sub = _EUPHEMISMS.get(w.lower())
+        return _preserve_case(w, sub) if sub else w
+    return re.sub(r"\b[a-zA-Z']+\b", repl, text)
+
+
+def _apply_tts_homographs(text: str) -> str:
+    def repl(m: re.Match[str]) -> str:
+        w = m.group(0)
+        sub = _TTS_HOMOGRAPHS.get(w.lower())
+        return _preserve_case(w, sub) if sub else w
     return re.sub(r"\b[a-zA-Z']+\b", repl, text)
 
 
@@ -119,7 +163,9 @@ def normalize(story: Story, cfg: Config) -> str:
     text = f"{title}.\n\n{body}"
 
     if cfg.filter.profanity_mode == "soft":
-        text = _soft_mask_profanity(text)
+        text = _soft_replace_profanity(text)
+
+    text = _apply_tts_homographs(text)
 
     text = _collapse_whitespace(text)
     return text
