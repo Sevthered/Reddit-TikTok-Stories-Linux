@@ -10,11 +10,41 @@ from pipeline.scrape import Story
 log = logging.getLogger(__name__)
 
 
+# Subordinating conjunctions / prepositions that already give the TIFU
+# expansion a natural pause when they follow it (no comma needed).
+# "TIFU by turning..." -> "Today I fucked up by turning..." reads fine.
+# Anything NOT in this list (a verb stem, an interjection, etc.) gets a
+# comma inserted so we don't end up with run-on hooks like
+# "Today I fucked up Called the fire department".
+_TIFU_NATURAL_FOLLOWERS = (
+    "by", "while", "when", "after", "before", "because", "with",
+    "from", "for", "since", "until", "during", "in", "on", "at",
+    "as", "if",
+)
+_TIFU_PREP_FOLLOW = re.compile(
+    r"\bTIFU(?=\s+(?:" + "|".join(_TIFU_NATURAL_FOLLOWERS) + r")\b)",
+    re.IGNORECASE,
+)
+_TIFU_MID = re.compile(r"\bTIFU(?=\s+\S)", re.IGNORECASE)
+_TIFU_END = re.compile(r"\bTIFU\b", re.IGNORECASE)
+
+
+def _expand_tifu(text: str) -> str:
+    """Expand TIFU with a comma when the follower would otherwise read as a
+    run-on (verb-style continuation); keep it bare when followed by a natural
+    connector like "by", "while", "when". The plain `_ABBREV` substitution
+    table can't disambiguate the two — see [issue #7]."""
+    text = _TIFU_PREP_FOLLOW.sub("Today I fucked up", text)
+    text = _TIFU_MID.sub("Today I fucked up,", text)
+    text = _TIFU_END.sub("Today I fucked up", text)
+    return text
+
+
 # Order matters where listed: longer keys before shorter prefixes.
+# NOTE: TIFU is intentionally absent here; _expand_tifu handles it.
 _ABBREV: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bWIBTA\b", re.IGNORECASE), "Would I be the asshole"),
     (re.compile(r"\bAITA\b", re.IGNORECASE), "Am I the asshole"),
-    (re.compile(r"\bTIFU\b", re.IGNORECASE), "Today I fucked up"),
     (re.compile(r"\bYTA\b", re.IGNORECASE), "You're the asshole"),
     (re.compile(r"\bNTA\b", re.IGNORECASE), "Not the asshole"),
     (re.compile(r"\bESH\b", re.IGNORECASE), "Everyone sucks here"),
@@ -90,6 +120,7 @@ def _expand_age_tag(m: re.Match[str]) -> str:
 
 
 def _expand_abbreviations(text: str) -> str:
+    text = _expand_tifu(text)
     for pat, repl in _ABBREV:
         text = pat.sub(repl, text)
     text = _AGE_TAG_RE.sub(_expand_age_tag, text)
