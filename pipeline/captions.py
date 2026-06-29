@@ -13,6 +13,9 @@ log = logging.getLogger(__name__)
 # Strip leading punctuation that whisper attaches to words ("," "." etc.)
 # We keep trailing punctuation because it carries spoken cadence.
 _LEADING_PUNCT = re.compile(r"^[^\w]+", re.UNICODE)
+# Whisper also attaches trailing punctuation; on screen this renders mid-cue
+# as `IS,` and looks like a parenthetical break, so strip it too.
+_TRAILING_PUNCT = re.compile(r"[^\w]+$", re.UNICODE)
 
 
 def _apply_case(text: str, case: str) -> str:
@@ -56,7 +59,9 @@ def _group_words(words: list[WordTiming], per_cue: int) -> list[list[WordTiming]
 
 
 def _clean_word(text: str) -> str:
-    return _LEADING_PUNCT.sub("", text).strip()
+    text = _LEADING_PUNCT.sub("", text)
+    text = _TRAILING_PUNCT.sub("", text)
+    return text.strip()
 
 
 def _style_block(cfg: Config) -> str:
