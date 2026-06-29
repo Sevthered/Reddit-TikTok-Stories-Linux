@@ -36,7 +36,15 @@ words_per_cue = 1
 margin_v      = 360
 
 [background]
-source_urls = ["https://www.youtube.com/watch?v=CHANGE_ME"]
+# Verified via research 2026-06-29 (see decisions/background-source-shortlist).
+# Both URLs grant reuse + monetization in their description ("path 4b"). YouTube
+# License field NOT confirmed CC-BY — rate-limited during research. Residual
+# risk: custom-map IP (Glenwood, Parkour Town, etc.) + revocable grant.
+# Screenshot descriptions before relying long-term.
+source_urls = [
+  "https://www.youtube.com/watch?v=85z7jqGAGcc",  # Orbital - "2 Hours" no-copyright parkour (2h29m)
+  "https://www.youtube.com/watch?v=eBExtYRpuqI",  # perpexior - "SMOOTHEST" compilation (>=37m)
+]
 cache_dir   = "data/backgrounds"
 audio_volume = 0.0
 
