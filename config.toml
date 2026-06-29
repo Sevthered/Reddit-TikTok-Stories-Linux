@@ -59,7 +59,8 @@ height = 1920
 fps = 30
 video_bitrate = "10M"
 audio_bitrate = "192k"
-target_max_seconds = 90
+target_min_seconds = 80     # TikTok monetization floor (1:20)
+target_max_seconds = 180    # 3 min cap; well under TikTok's 10-min limit
 
 [upload]
 platform   = "tiktok"

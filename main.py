@@ -92,6 +92,11 @@ def main() -> int:
                             story.id, audio.duration_s, cfg.video.target_max_seconds)
                 db.mark_used(story.id, title=story.title, platform="skipped:too_long")
                 continue
+            if audio.duration_s < cfg.video.target_min_seconds:
+                log.warning("skip %s: audio %.2fs below target_min_seconds=%d (monetization floor)",
+                            story.id, audio.duration_s, cfg.video.target_min_seconds)
+                db.mark_used(story.id, title=story.title, platform="skipped:too_short")
+                continue
 
             bg_path = pick_random_cached(bgs)
             clip = make_clip(bg_path, audio.duration_s, cfg, work_dir / "bg.mp4")

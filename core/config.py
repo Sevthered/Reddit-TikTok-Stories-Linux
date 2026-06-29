@@ -74,6 +74,7 @@ class VideoCfg:
     fps: int
     video_bitrate: str
     audio_bitrate: str
+    target_min_seconds: int
     target_max_seconds: int
 
 
@@ -257,8 +258,11 @@ def load_config(path: str | Path = "config.toml") -> Config:
         fps=int(_require(v, "fps", "video")),
         video_bitrate=_require(v, "video_bitrate", "video"),
         audio_bitrate=_require(v, "audio_bitrate", "video"),
+        target_min_seconds=int(v.get("target_min_seconds", 80)),
         target_max_seconds=int(_require(v, "target_max_seconds", "video")),
     )
+    if video.target_min_seconds < 1 or video.target_min_seconds >= video.target_max_seconds:
+        raise ConfigError("video: require 1 <= target_min_seconds < target_max_seconds")
 
     u = _section(raw, "upload")
     upload = UploadCfg(

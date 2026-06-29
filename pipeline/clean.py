@@ -5,7 +5,6 @@ import re
 
 from core.config import Config
 from pipeline.confusables import sanitize as sanitize_confusables
-from pipeline.filter import PROFANITY
 from pipeline.scrape import Story
 
 log = logging.getLogger(__name__)
