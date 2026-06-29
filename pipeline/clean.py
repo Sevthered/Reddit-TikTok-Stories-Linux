@@ -86,13 +86,18 @@ _EDIT_LABEL_RE = re.compile(r"^\s*edit\s*\d*\s*:\s*", re.IGNORECASE | re.MULTILI
 # we've actually seen on r/tifu). Everything from the marker onward gets
 # dropped — it's almost always anti-climax, "thank you to everyone who
 # commented" etc., which inflates duration and breaks the narrative arc.
+# Optional surrounding quote / markdown emphasis around the marker word.
+# Real posts wrap their summary lines as `"TL;DR"`, `*UPDATE:*`, `**TL;DR**`,
+# `_Edit Final_`, etc. The anchor must still be a line start, but anything
+# inside this character class is allowed between the line start and the
+# marker, and again between the marker and its trailing colon.
 _TAIL_TRUNCATE_RE = re.compile(
-    r"^\s*(?:"
+    r"^\s*[\"'*_]*\s*(?:"
     r"update\s*\d*"           # UPDATE, UPDATE 2, UPDATES
     r"|final\s+edit\s*\d*"    # FINAL EDIT
     r"|edit\s+final"          # EDIT FINAL
     r"|tl[;:\s]*dr"           # TL;DR, TL:DR, TL DR, TLDR, TL:DR: (any extra punct trails)
-    r")\s*[:.\-]?\s*",
+    r")[\"'*_]*\s*[:.\-]?\s*",
     re.IGNORECASE | re.MULTILINE,
 )
 
