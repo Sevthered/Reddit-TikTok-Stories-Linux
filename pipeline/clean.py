@@ -221,6 +221,16 @@ def _expand_blood_types(text: str) -> str:
     )
 
 
+# edge-tts gives lowercase pronoun `i` flatter prosody than `I` — uppercase
+# before synthesis. Pattern covers both standalone `i` and apostrophe-led
+# `i'm` / `i've` / `i'll`.
+_LOWER_I_RE = re.compile(r"\bi(?=\b|')")
+
+
+def _fix_lowercase_i(text: str) -> str:
+    return _LOWER_I_RE.sub("I", text)
+
+
 def _preserve_case(orig: str, repl: str) -> str:
     if not orig or not repl:
         return repl
@@ -288,6 +298,8 @@ def normalize(story: Story, cfg: Config) -> str:
     title = _expand_abbreviations(_strip_markdown(title_raw))
 
     text = f"{title}.\n\n{body}"
+
+    text = _fix_lowercase_i(text)
 
     if cfg.filter.profanity_mode == "soft":
         text = _soft_replace_profanity(text)
