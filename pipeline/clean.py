@@ -160,6 +160,19 @@ _TTS_HOMOGRAPHS: dict[str, str] = {
 }
 
 
+# Compound modifiers like "60-hour" / "2-year" / "30-day" are pronounced
+# awkwardly by edge-tts (the hyphen reads as "dash" or fuses the tokens).
+# Splitting on the hyphen lets the TTS speak the number and word naturally
+# and keeps the on-screen caption readable. Restricted to digits + letters
+# so we don't break model numbers like "iPhone-15" (rare in body prose) or
+# negative ranges.
+_NUMERIC_HYPHEN_WORD_RE = re.compile(r"\b(\d+)-([a-zA-Z]+)\b")
+
+
+def _split_numeric_hyphen(text: str) -> str:
+    return _NUMERIC_HYPHEN_WORD_RE.sub(r"\1 \2", text)
+
+
 def _preserve_case(orig: str, repl: str) -> str:
     if not orig or not repl:
         return repl
@@ -224,6 +237,7 @@ def normalize(story: Story, cfg: Config) -> str:
         text = _soft_replace_profanity(text)
 
     text = _apply_tts_homographs(text)
+    text = _split_numeric_hyphen(text)
 
     text = _collapse_whitespace(text)
     return text
