@@ -64,9 +64,8 @@ def main() -> int:
                 break
             if not keep(story, cfg, db):
                 continue
-            picked += 1
             print("=" * 72)
-            print(f"PICKED: r/{story.subreddit}  id={story.id}  score={story.score}  words={story.word_count}")
+            print(f"CANDIDATE: r/{story.subreddit}  id={story.id}  score={story.score}  words={story.word_count}")
             print(f"TITLE : {story.title}")
             print(f"URL   : https://reddit.com{story.permalink}")
             print(f"PREVIEW: {_preview(story.selftext)}")
@@ -82,8 +81,13 @@ def main() -> int:
             audio = synthesize(spoken, cfg, work_dir)
             print(f"AUDIO : {audio.path}  duration={audio.duration_s:.2f}s  too_long={audio.too_long}")
             if audio.too_long:
-                log.warning("audio exceeds target_max_seconds=%d — skipping in later phases",
-                            cfg.video.target_max_seconds)
+                log.warning("skip %s: audio %.2fs exceeds target_max_seconds=%d",
+                            story.id, audio.duration_s, cfg.video.target_max_seconds)
+                db.mark_used(story.id, title=story.title, platform="skipped:too_long")
+                continue
+
+            picked += 1
+            print(f"PICKED #{picked}: {story.id}")
 
         if picked == 0:
             log.warning("no candidates passed filter (all used / out-of-range / NSFW / low-score / profane)")
