@@ -3,10 +3,12 @@ requests==2.32.3
 praw==7.8.1
 edge-tts==7.2.8
 
+# Phase 3 (background download)
+yt-dlp==2026.6.9
+
 # Deferred — uncomment as later phases land:
 # kokoro==0.7.16           # Phase 2 (offline TTS fallback)
 # mlx-whisper==0.4.2       # Phase 5 (Apple-Silicon transcription)
 # faster-whisper==1.0.3    # Phase 5 (CPU fallback)
-# yt-dlp==2024.12.13       # Phase 3 (background download)
 # tiktok-uploader==1.0.13  # Phase 6/7 (upload)
 # webdriver-manager==4.0.2 # Phase 6/7 (chromedriver mgmt)
