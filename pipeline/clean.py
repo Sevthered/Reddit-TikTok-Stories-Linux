@@ -51,6 +51,21 @@ _MD_INLINE_CODE_RE = re.compile(r"`([^`]+)`")
 # Reddit "Edit:" / "EDIT 2:" — keep the body, drop the label so TTS doesn't say it.
 _EDIT_LABEL_RE = re.compile(r"^\s*edit\s*\d*\s*:\s*", re.IGNORECASE | re.MULTILINE)
 
+# Tail markers that fall after the story's punchline: UPDATE blocks, FINAL EDIT
+# blocks, TL;DR summaries (with any of the colon/semicolon/space delimiters
+# we've actually seen on r/tifu). Everything from the marker onward gets
+# dropped — it's almost always anti-climax, "thank you to everyone who
+# commented" etc., which inflates duration and breaks the narrative arc.
+_TAIL_TRUNCATE_RE = re.compile(
+    r"^\s*(?:"
+    r"update\s*\d*"           # UPDATE, UPDATE 2, UPDATES
+    r"|final\s+edit\s*\d*"    # FINAL EDIT
+    r"|edit\s+final"          # EDIT FINAL
+    r"|tl[;:\s]*dr"           # TL;DR, TL:DR, TL DR, TLDR, TL:DR: (any extra punct trails)
+    r")\s*[:.\-]?\s*",
+    re.IGNORECASE | re.MULTILINE,
+)
+
 _WS_COLLAPSE_RE = re.compile(r"[ \t]+")
 _BLANK_LINES_RE = re.compile(r"\n{3,}")
 
@@ -140,6 +155,18 @@ def _apply_tts_homographs(text: str) -> str:
     return re.sub(r"\b[a-zA-Z']+\b", repl, text)
 
 
+def _truncate_tail(text: str) -> str:
+    """Drop everything from the first UPDATE: / FINAL EDIT: / TL;DR onward.
+    These markers indicate post-punchline content (later edits, summaries,
+    thank-you tails) that hurt the video's narrative arc and inflate duration.
+    Must run BEFORE _expand_abbreviations so TL;DR variants are still
+    matchable (the abbrev pass rewrites TL;DR → "To summarize")."""
+    m = _TAIL_TRUNCATE_RE.search(text)
+    if m:
+        return text[:m.start()].rstrip()
+    return text
+
+
 def _collapse_whitespace(text: str) -> str:
     lines = [_WS_COLLAPSE_RE.sub(" ", ln).strip() for ln in text.splitlines()]
     text = "\n".join(lines)
@@ -152,6 +179,7 @@ def normalize(story: Story, cfg: Config) -> str:
     if cfg.filter.confusable_mode != "off":
         body = sanitize_confusables(body)
     body = _strip_markdown(body)
+    body = _truncate_tail(body)
     body = _expand_abbreviations(body)
 
     title_raw = story.title
