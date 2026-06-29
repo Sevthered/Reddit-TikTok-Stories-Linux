@@ -59,6 +59,14 @@ _ABBREV: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bafaik\b", re.IGNORECASE), "as far as I know"),
     (re.compile(r"\bbf\b", re.IGNORECASE), "boyfriend"),
     (re.compile(r"\bgf\b", re.IGNORECASE), "girlfriend"),
+    (re.compile(r"\bbtw\b", re.IGNORECASE), "by the way"),
+    # IMHO must precede IMO — longer-prefix-first rule (IMHO contains IMO at start).
+    (re.compile(r"\bimho\b", re.IGNORECASE), "in my honest opinion"),
+    (re.compile(r"\bimo\b", re.IGNORECASE), "in my opinion"),
+    (re.compile(r"\btbh\b", re.IGNORECASE), "to be honest"),
+    (re.compile(r"\bnvm\b", re.IGNORECASE), "never mind"),
+    (re.compile(r"\bidc\b", re.IGNORECASE), "I don't care"),
+    (re.compile(r"\biykyk\b", re.IGNORECASE), "if you know you know"),
 ]
 
 # Reddit-style age/gender tag — REQUIRE brackets to avoid eating "about 5 minutes".
