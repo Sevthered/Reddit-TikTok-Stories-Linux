@@ -199,6 +199,20 @@ def _split_numeric_hyphen(text: str) -> str:
     return _NUMERIC_HYPHEN_WORD_RE.sub(r"\1 \2", text)
 
 
+# Blood-type tokens (AB-, O+, A+, B-) — edge-tts garbles the sign, so expand
+# to "AB negative" / "O positive" before synthesis. Alternation is longest-first
+# (AB before A/B) so "AB-" matches as "AB", not "A" + leftover "B-".
+_BLOOD_TYPE_RE = re.compile(r"\b(AB|O|A|B)([+-])(?=\b|\s|[^\w+-])")
+_BLOOD_SIGN = {"+": "positive", "-": "negative"}
+
+
+def _expand_blood_types(text: str) -> str:
+    return _BLOOD_TYPE_RE.sub(
+        lambda m: f"{m.group(1)} {_BLOOD_SIGN[m.group(2)]}",
+        text,
+    )
+
+
 def _preserve_case(orig: str, repl: str) -> str:
     if not orig or not repl:
         return repl
@@ -273,6 +287,7 @@ def normalize(story: Story, cfg: Config) -> str:
     text = _apply_apostrophe_restore(text)
     text = _apply_tts_homographs(text)
     text = _split_numeric_hyphen(text)
+    text = _expand_blood_types(text)
 
     text = _collapse_whitespace(text)
     return text
