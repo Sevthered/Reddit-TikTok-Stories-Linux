@@ -120,14 +120,33 @@ def _build_dialogue_lines(
     cue: list[WordTiming],
     cfg: Config,
     highlight_inline: str,
+    next_anchor_s: float | None,
 ) -> list[str]:
-    """For each word in the cue, emit one Dialogue line covering that word's
-    timing. The line shows the full cue text but with only the active word
-    wrapped in a color override. Result: as VO speaks, the active word pulses
-    in the highlight color while neighbors stay white."""
+    """Emit one Dialogue line per word in the cue. Each line shows the full
+    cue text with the active word wrapped in an inline color override.
+
+    Each Dialogue's End is extended to the *next* word's t_start so the
+    caption track has no blank frames between words or between cues. The
+    last word in the cue extends to `next_anchor_s` (the first t_start of
+    the following cue) so cross-cue silences (typically 1-1.3s between
+    sentences) stay visually filled with the prior cue's text. If
+    `next_anchor_s` is None (final cue overall), the last word holds for
+    a small tail past its t_end so it doesn't blink off at exactly the
+    word's natural release."""
+    TAIL_HOLD_S = 1.0  # generous hold so the last cue doesn't pop off
     words_cased = [_apply_case(_clean_word(w.text), cfg.captions.case) for w in cue]
     lines: list[str] = []
     for i, w in enumerate(cue):
+        if i + 1 < len(cue):
+            end_s = cue[i + 1].t_start
+        elif next_anchor_s is not None:
+            end_s = next_anchor_s
+        else:
+            end_s = w.t_end + TAIL_HOLD_S
+        # Never collapse to zero-duration: guarantee end > start by at least
+        # a frame even if whisper put consecutive words at the same t_start.
+        end_s = max(end_s, w.t_start + 0.04)
+
         parts: list[str] = []
         for j, text in enumerate(words_cased):
             if not text:
@@ -138,7 +157,7 @@ def _build_dialogue_lines(
                 parts.append(text)
         cue_text = " ".join(parts)
         lines.append(
-            f"Dialogue: 0,{_ass_time(w.t_start)},{_ass_time(w.t_end)},Default,,0,0,0,,{cue_text}\n"
+            f"Dialogue: 0,{_ass_time(w.t_start)},{_ass_time(end_s)},Default,,0,0,0,,{cue_text}\n"
         )
     return lines
 
@@ -157,8 +176,9 @@ def build_ass(words: list[WordTiming], cfg: Config, out_path: Path) -> Path:
     cues = _group_words(words, cfg.captions.words_per_cue)
 
     body_parts: list[str] = [_script_info(cfg), _style_block(cfg), "\n", _events_header()]
-    for cue in cues:
-        body_parts.extend(_build_dialogue_lines(cue, cfg, highlight_inline))
+    for idx, cue in enumerate(cues):
+        next_anchor = cues[idx + 1][0].t_start if idx + 1 < len(cues) else None
+        body_parts.extend(_build_dialogue_lines(cue, cfg, highlight_inline, next_anchor))
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("".join(body_parts), encoding="utf-8")
