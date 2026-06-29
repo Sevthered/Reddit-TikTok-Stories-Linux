@@ -4,6 +4,7 @@ import logging
 import re
 
 from core.config import Config
+from pipeline.confusables import sanitize as sanitize_confusables
 from pipeline.filter import PROFANITY
 from pipeline.scrape import Story
 
@@ -105,10 +106,15 @@ def _collapse_whitespace(text: str) -> str:
 
 def normalize(story: Story, cfg: Config) -> str:
     body = story.selftext
+    if cfg.filter.confusable_mode != "off":
+        body = sanitize_confusables(body)
     body = _strip_markdown(body)
     body = _expand_abbreviations(body)
 
-    title = _expand_abbreviations(_strip_markdown(story.title))
+    title_raw = story.title
+    if cfg.filter.confusable_mode != "off":
+        title_raw = sanitize_confusables(title_raw)
+    title = _expand_abbreviations(_strip_markdown(title_raw))
 
     text = f"{title}.\n\n{body}"
 

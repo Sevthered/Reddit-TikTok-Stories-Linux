@@ -5,6 +5,7 @@ import re
 
 from core.config import Config
 from core.db import Db
+from pipeline.confusables import has_confusable
 from pipeline.scrape import Story
 
 log = logging.getLogger(__name__)
@@ -56,5 +57,9 @@ def keep(story: Story, cfg: Config, db: Db) -> bool:
         body = f"{story.title}\n{story.selftext}"
         if _has_profanity(body):
             log.debug("reject %s: profanity (strict mode)", story.id)
+            return False
+    if cfg.filter.confusable_mode == "strict":
+        if has_confusable(f"{story.title}\n{story.selftext}"):
+            log.debug("reject %s: unicode confusable (strict mode)", story.id)
             return False
     return True

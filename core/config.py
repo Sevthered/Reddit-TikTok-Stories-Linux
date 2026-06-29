@@ -29,6 +29,7 @@ class FilterCfg:
     min_score: int
     allow_nsfw: bool
     profanity_mode: str
+    confusable_mode: str
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,7 @@ _REDDIT_MODES = {"json", "praw", "rss"}
 _LISTINGS = {"top", "hot", "new"}
 _TIME_FILTERS = {"hour", "day", "week", "month", "year", "all"}
 _PROFANITY_MODES = {"off", "soft", "strict"}
+_CONFUSABLE_MODES = {"off", "sanitize", "strict"}
 _TTS_ENGINES = {"edge", "kokoro"}
 _WHISPER_BACKENDS = {"mlx", "faster"}
 
@@ -181,12 +183,16 @@ def load_config(path: str | Path = "config.toml") -> Config:
     profanity_mode = _require(f_, "profanity_mode", "filter")
     if profanity_mode not in _PROFANITY_MODES:
         raise ConfigError(f"filter.profanity_mode must be one of {_PROFANITY_MODES}")
+    confusable_mode = f_.get("confusable_mode", "sanitize")
+    if confusable_mode not in _CONFUSABLE_MODES:
+        raise ConfigError(f"filter.confusable_mode must be one of {_CONFUSABLE_MODES}")
     flt = FilterCfg(
         min_words=int(_require(f_, "min_words", "filter")),
         max_words=int(_require(f_, "max_words", "filter")),
         min_score=int(_require(f_, "min_score", "filter")),
         allow_nsfw=bool(_require(f_, "allow_nsfw", "filter")),
         profanity_mode=profanity_mode,
+        confusable_mode=confusable_mode,
     )
     if flt.min_words < 1 or flt.max_words < flt.min_words:
         raise ConfigError("filter: require 1 <= min_words <= max_words")

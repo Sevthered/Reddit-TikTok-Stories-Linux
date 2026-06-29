@@ -13,6 +13,7 @@ max_words      = 600
 min_score      = 500
 allow_nsfw     = false
 profanity_mode = "soft"        # off | soft (mask) | strict (skip post)
+confusable_mode = "sanitize"   # off | sanitize (map Cyrillic/Greek look-alikes → Latin) | strict (skip if any)
 
 [tts]
 engine = "edge"                # edge | kokoro
