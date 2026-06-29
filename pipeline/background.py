@@ -82,15 +82,26 @@ def ensure_cached(cfg: Config) -> list[Path]:
             "-o", str(cache_dir / f"{vid}.%(ext)s"),
             url,
         ]
-        subprocess.run(cmd, check=True)
+        try:
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            log.warning("yt-dlp failed for %s (id=%s): %s — skipping", url, vid, e)
+            # Leave .part files for resume on next run.
+            continue
+
         if not target.exists():
-            # yt-dlp may have merged into a different extension; rescue by globbing.
-            matches = list(cache_dir.glob(f"{vid}.*"))
+            matches = list(cache_dir.glob(f"{vid}.mp4"))
             if not matches:
-                raise RuntimeError(f"yt-dlp finished but no file at {target}")
+                log.warning("yt-dlp finished but no mp4 at %s — skipping", target)
+                continue
             target = matches[0]
         cached.append(target)
 
+    if not cached:
+        raise RuntimeError(
+            "ensure_cached: no backgrounds downloaded successfully. "
+            "Check yt-dlp / network / source URLs."
+        )
     return cached
 
 

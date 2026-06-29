@@ -45,7 +45,10 @@ highlight_mode = "color"          # color | box (box deferred)
 # Screenshot descriptions before relying long-term.
 source_urls = [
   "https://www.youtube.com/watch?v=85z7jqGAGcc",  # Orbital - "2 Hours" no-copyright parkour (2h29m)
-  "https://www.youtube.com/watch?v=eBExtYRpuqI",  # perpexior - "SMOOTHEST" compilation (>=37m)
+  # perpexior eBExtYRpuqI was paired here but kept 403ing mid-download.
+  # 2h29m of Orbital is enough variety via random start offsets. Re-add
+  # a second source once we have one that actually downloads (or a Subway
+  # Surfers pool — see improvements/multi-pool-backgrounds).
 ]
 cache_dir   = "data/backgrounds"
 audio_volume = 0.0
