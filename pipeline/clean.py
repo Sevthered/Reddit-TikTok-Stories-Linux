@@ -157,6 +157,27 @@ _EUPHEMISMS: dict[str, str] = {
 }
 
 
+# Reddit posters routinely drop apostrophes ("dont", "ive", "im"), and edge-tts
+# then mispronounces these as separate words ("ive" rhyming with "five",
+# "im" as a syllable). Restore the apostrophe before any other lookup runs.
+# Skipped intentionally: "its" (ambiguous with possessive) and "id" (often the
+# noun "ID").
+_RESTORE_APOSTROPHE: dict[str, str] = {
+    "dont": "don't", "didnt": "didn't", "wasnt": "wasn't", "isnt": "isn't",
+    "arent": "aren't", "werent": "weren't", "wont": "won't",
+    "shouldnt": "shouldn't", "couldnt": "couldn't", "wouldnt": "wouldn't",
+    "hasnt": "hasn't", "havent": "haven't", "hadnt": "hadn't",
+    "doesnt": "doesn't",
+    "im": "I'm", "ive": "I've", "ill": "I'll",
+    "youre": "you're", "youve": "you've", "youll": "you'll", "youd": "you'd",
+    "hes": "he's", "shes": "she's",
+    "theyre": "they're", "theyve": "they've", "theyll": "they'll", "theyd": "they'd",
+    "thats": "that's", "whats": "what's", "wheres": "where's",
+    "whos": "who's", "hows": "how's",
+    "couldve": "could've", "wouldve": "would've", "shouldve": "should've",
+}
+
+
 # Edge-tts Guy Neural mangles a small set of words by dropping or merging
 # phonemes. Force the longer / less-ambiguous form before synthesis.
 _TTS_HOMOGRAPHS: dict[str, str] = {
@@ -192,6 +213,14 @@ def _soft_replace_profanity(text: str) -> str:
     def repl(m: re.Match[str]) -> str:
         w = m.group(0)
         sub = _EUPHEMISMS.get(w.lower())
+        return _preserve_case(w, sub) if sub else w
+    return re.sub(r"\b[a-zA-Z']+\b", repl, text)
+
+
+def _apply_apostrophe_restore(text: str) -> str:
+    def repl(m: re.Match[str]) -> str:
+        w = m.group(0)
+        sub = _RESTORE_APOSTROPHE.get(w.lower())
         return _preserve_case(w, sub) if sub else w
     return re.sub(r"\b[a-zA-Z']+\b", repl, text)
 
@@ -241,6 +270,7 @@ def normalize(story: Story, cfg: Config) -> str:
     if cfg.filter.profanity_mode == "soft":
         text = _soft_replace_profanity(text)
 
+    text = _apply_apostrophe_restore(text)
     text = _apply_tts_homographs(text)
     text = _split_numeric_hyphen(text)
 
