@@ -9,6 +9,7 @@ from pathlib import Path
 from core.config import ConfigError, load_config
 from core.db import Db
 from core.logging_setup import setup_logging
+from pipeline.background import ensure_cached, make_clip, pick_random_cached
 from pipeline.clean import normalize
 from pipeline.filter import keep
 from pipeline.scrape import fetch_candidates
@@ -55,6 +56,9 @@ def main() -> int:
         target = args.limit if args.limit is not None else cfg.run.videos_per_run
         log.info("target videos this run: %d", target)
 
+        bgs = ensure_cached(cfg)
+        log.info("background cache: %d source(s) ready", len(bgs))
+
         candidates = fetch_candidates(cfg)
         log.info("fetched %d candidate stories total", len(candidates))
 
@@ -85,6 +89,10 @@ def main() -> int:
                             story.id, audio.duration_s, cfg.video.target_max_seconds)
                 db.mark_used(story.id, title=story.title, platform="skipped:too_long")
                 continue
+
+            bg_path = pick_random_cached(bgs)
+            clip = make_clip(bg_path, audio.duration_s, cfg, work_dir / "bg.mp4")
+            print(f"BG    : {clip.source.name} @ {clip.start_s:.2f}s -> {clip.path}")
 
             picked += 1
             print(f"PICKED #{picked}: {story.id}")
