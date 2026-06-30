@@ -109,6 +109,38 @@ _TAIL_TRUNCATE_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+# Smart curly quotes / apostrophes passed through from Reddit's editor.
+# edge-tts handles them, but downstream regex (apostrophe restore, possessive
+# restore, profanity match) is ASCII-only, so normalize early.
+_SMART_PUNCT = str.maketrans({
+    "‘": "'", "’": "'", "‚": "'", "‛": "'",
+    "“": '"', "”": '"', "„": '"', "‟": '"',
+    "′": "'", "″": '"',
+})
+
+# Tiny typo whitelist — keys must be confidently wrong (no real-word collision).
+_COMMON_TYPOS: dict[str, str] = {
+    "snd": "and",
+}
+_TYPO_RE = re.compile(
+    r"\b(" + "|".join(re.escape(k) for k in _COMMON_TYPOS) + r")\b",
+    re.IGNORECASE,
+)
+
+# "etc;" / "etc:" → "etc." — edge-tts reads the semicolon as a long pause and
+# the colon as a clause break; both sound wrong inside a parenthetical list.
+_ETC_PUNCT_RE = re.compile(r"\betc[;:]", re.IGNORECASE)
+
+# Bare small ints in titles ("4 years old") read flatter than spelled-out
+# forms ("four years old"). Body prose tolerates digits; titles are the hook
+# so we want the spoken version.
+_TITLE_INT_WORDS = {
+    "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
+    "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine",
+    "10": "ten",
+}
+_SMALL_INT_RE = re.compile(r"\b(\d{1,2})\b")
+
 _WS_COLLAPSE_RE = re.compile(r"[ \t]+")
 _BLANK_LINES_RE = re.compile(r"\n{3,}")
 
@@ -129,7 +161,33 @@ def _strip_markdown(text: str) -> str:
 
 def _expand_age_tag(m: re.Match[str]) -> str:
     age, g = m.group(1), m.group(2).upper()
-    return f"{age} {_GENDER_WORD[g]}"
+    return f"{age} year old {_GENDER_WORD[g]}"
+
+
+def _normalize_smart_punct(text: str) -> str:
+    return text.translate(_SMART_PUNCT)
+
+
+def _fix_common_typos(text: str) -> str:
+    def repl(m: re.Match[str]) -> str:
+        w = m.group(1)
+        sub = _COMMON_TYPOS.get(w.lower())
+        return _preserve_case(w, sub) if sub else w
+    return _TYPO_RE.sub(repl, text)
+
+
+def _fix_etc_punct(text: str) -> str:
+    return _ETC_PUNCT_RE.sub(lambda m: m.group(0)[:-1] + ".", text)
+
+
+def _spell_small_ints(text: str) -> str:
+    """Spell out small ints (0-10) so TTS reads `four` not `four` with the
+    flatter digit prosody. Restricted to title use — body prose tolerates
+    digits and rewriting "I was 30" would be wrong."""
+    return _SMALL_INT_RE.sub(
+        lambda m: _TITLE_INT_WORDS.get(m.group(1), m.group(1)),
+        text,
+    )
 
 
 def _expand_abbreviations(text: str) -> str:
@@ -330,6 +388,7 @@ def normalize(story: Story, cfg: Config) -> str:
     body = story.selftext
     if cfg.filter.confusable_mode != "off":
         body = sanitize_confusables(body)
+    body = _normalize_smart_punct(body)
     body = _strip_markdown(body)
     body = _truncate_tail(body)
     body = _expand_abbreviations(body)
@@ -337,7 +396,9 @@ def normalize(story: Story, cfg: Config) -> str:
     title_raw = story.title
     if cfg.filter.confusable_mode != "off":
         title_raw = sanitize_confusables(title_raw)
+    title_raw = _normalize_smart_punct(title_raw)
     title = _expand_abbreviations(_strip_markdown(title_raw))
+    title = _spell_small_ints(title)
 
     title_stripped = title.rstrip()
     sep = "" if title_stripped.endswith((".", "!", "?")) else "."
@@ -353,6 +414,8 @@ def normalize(story: Story, cfg: Config) -> str:
     text = _apply_tts_homographs(text)
     text = _split_numeric_hyphen(text)
     text = _expand_blood_types(text)
+    text = _fix_etc_punct(text)
+    text = _fix_common_typos(text)
 
     text = _collapse_whitespace(text)
     return text
