@@ -339,7 +339,9 @@ def normalize(story: Story, cfg: Config) -> str:
         title_raw = sanitize_confusables(title_raw)
     title = _expand_abbreviations(_strip_markdown(title_raw))
 
-    text = f"{title}.\n\n{body}"
+    title_stripped = title.rstrip()
+    sep = "" if title_stripped.endswith((".", "!", "?")) else "."
+    text = f"{title_stripped}{sep}\n\n{body}"
 
     text = _fix_lowercase_i(text)
 
