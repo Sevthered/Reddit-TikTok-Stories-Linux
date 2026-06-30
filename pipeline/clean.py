@@ -75,6 +75,21 @@ _ABBREV: list[tuple[re.Pattern[str], str]] = [
 _AGE_TAG_RE = re.compile(r"[\[(]\s*(\d{1,2})\s*([MmFf])\s*[\])]")
 _GENDER_WORD = {"M": "male", "F": "female"}
 
+# After age-tag expansion, "I, (21F) ..." becomes "I, 21 year old female ...".
+# edge-tts then contracts the `I, <digit>` seam to "I've 21" (issue #39).
+# Insert the article "a" so the seam reads as `I, a 21 year old female`
+# — natural English prose, and the article breaks the contraction trigger.
+# Pattern is intentionally narrow: only fires when the digits are immediately
+# followed by `year old male|female`, so prose like `I, 21, was supposed to`
+# or `I, my brother, and Joe` is untouched.
+_I_COMMA_AGE_SEAM_RE = re.compile(
+    r"\bI,\s+(\d{1,2}\s+year\s+old\s+(?:male|female))\b"
+)
+
+
+def _break_i_comma_age_seam(text: str) -> str:
+    return _I_COMMA_AGE_SEAM_RE.sub(r"I, a \1", text)
+
 # Markdown noise.
 _MD_BOLD_ITALIC_RE = re.compile(r"(\*{1,3}|_{1,3})(.+?)\1", re.DOTALL)
 _MD_STRIKE_RE = re.compile(r"~~(.+?)~~", re.DOTALL)
@@ -196,6 +211,7 @@ def _expand_abbreviations(text: str) -> str:
     for pat, repl in _ABBREV:
         text = pat.sub(repl, text)
     text = _AGE_TAG_RE.sub(_expand_age_tag, text)
+    text = _break_i_comma_age_seam(text)
     text = _EDIT_LABEL_RE.sub("", text)
     return text
 
