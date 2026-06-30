@@ -67,6 +67,7 @@ _ABBREV: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bnvm\b", re.IGNORECASE), "never mind"),
     (re.compile(r"\bidc\b", re.IGNORECASE), "I don't care"),
     (re.compile(r"\biykyk\b", re.IGNORECASE), "if you know you know"),
+    (re.compile(r"\blmk\b", re.IGNORECASE), "let me know"),
 ]
 
 # Reddit-style age/gender tag — REQUIRE brackets to avoid eating "about 5 minutes".
