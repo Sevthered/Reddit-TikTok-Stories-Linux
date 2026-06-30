@@ -103,7 +103,8 @@ def main() -> int:
             print(f"BG    : {clip.source.name} @ {clip.start_s:.2f}s -> {clip.path}")
 
             words = transcribe(audio.path, cfg)
-            ass_path = build_ass(words, cfg, work_dir / "captions.ass")
+            ass_path = build_ass(words, cfg, work_dir / "captions.ass",
+                                 voice_duration_s=audio.duration_s)
             print(f"CAPS  : {len(words)} words -> {ass_path}")
 
             final = render(clip.path, audio.path, ass_path, cfg,
