@@ -186,6 +186,48 @@ _RESTORE_APOSTROPHE: dict[str, str] = {
 }
 
 
+# Possessives on kinship/relational nouns drop apostrophes in Reddit prose
+# ("my parents house", "best friends sister"). edge-tts then reads the plural
+# instead of the possessive, which changes the meaning. Restore the apostrophe
+# when the kinship noun is followed by a common possessed noun. The possessed-
+# noun whitelist constrains the rule so real plurals followed by a verb
+# ("his parents traveled") aren't rewritten.
+_KINSHIP_NOUNS = (
+    "parent", "friend", "sister", "brother", "mom", "dad", "mother", "father",
+    "kid", "child", "son", "daughter", "cousin", "aunt", "uncle",
+    "grandma", "grandpa", "grandmother", "grandfather",
+    "wife", "husband", "boyfriend", "girlfriend", "roommate", "neighbor",
+)
+_POSSESSED_NOUNS = frozenset({
+    "house", "home", "place", "room", "apartment", "car", "truck",
+    "family", "dog", "cat", "phone", "computer", "laptop",
+    "kid", "kids", "baby", "child", "son", "daughter",
+    "sister", "brother", "mom", "dad", "mother", "father", "parents",
+    "friend", "friends", "wife", "husband", "boyfriend", "girlfriend",
+    "life", "story", "name", "fault", "idea", "opinion", "decision",
+    "advice", "response", "reaction", "birthday", "wedding", "death",
+    "funeral", "divorce", "money", "account", "business", "job", "work",
+    "office", "school", "class", "party", "dinner", "lunch", "breakfast",
+    "side", "face", "hand", "hands", "head", "arm", "arms", "leg", "legs",
+    "eye", "eyes", "mouth", "voice", "heart", "mind", "feelings", "feeling",
+    "stuff", "things", "thing", "problem", "problems", "issue", "issues",
+    "secret", "secrets", "plan", "plans", "room", "stuff",
+})
+_POSSESSIVE_KINSHIP_RE = re.compile(
+    r"\b(" + "|".join(_KINSHIP_NOUNS) + r")s(\s+)(\w+)",
+    re.IGNORECASE,
+)
+
+
+def _apply_possessive_restore(text: str) -> str:
+    def repl(m: re.Match[str]) -> str:
+        head, sep, nxt = m.group(1), m.group(2), m.group(3)
+        if nxt.lower() not in _POSSESSED_NOUNS:
+            return m.group(0)
+        return f"{head}'s{sep}{nxt}"
+    return _POSSESSIVE_KINSHIP_RE.sub(repl, text)
+
+
 # Edge-tts Guy Neural mangles a small set of words by dropping or merging
 # phonemes. Force the longer / less-ambiguous form before synthesis.
 _TTS_HOMOGRAPHS: dict[str, str] = {
@@ -305,6 +347,7 @@ def normalize(story: Story, cfg: Config) -> str:
         text = _soft_replace_profanity(text)
 
     text = _apply_apostrophe_restore(text)
+    text = _apply_possessive_restore(text)
     text = _apply_tts_homographs(text)
     text = _split_numeric_hyphen(text)
     text = _expand_blood_types(text)
