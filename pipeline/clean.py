@@ -374,6 +374,30 @@ def _apply_apostrophe_restore(text: str) -> str:
     return re.sub(r"\b[a-zA-Z']+\b", repl, text)
 
 
+# Quoted single-letter aliases (`'B'`, `"A"`) — Reddit posters use these to
+# anonymize people ("who we will call 'B' was single"). edge-tts reads the
+# quoted letter as a homophone word ("be", "a", "you"), wrecking both the
+# audio and the karaoke caption. Rewriting the letter with a trailing period
+# (`B.`) forces letter-name pronunciation. Negative lookarounds exclude
+# alphanumeric neighbors so possessives (`John's`), contractions (`don't`),
+# and multi-letter acronyms (`'NYC'`) are untouched. Runs after smart-punct
+# normalization so curly quotes are already straightened.
+_QUOTED_LETTER_RE = re.compile(r"(?<![A-Za-z0-9])['\"]([A-Za-z])['\"](?![A-Za-z0-9])")
+
+
+def _expand_quoted_letter_aliases(text: str) -> str:
+    def repl(m: re.Match[str]) -> str:
+        letter = m.group(1).upper()
+        # Skip the appended period when the next char is already a full stop —
+        # avoids producing "B.." at end of clause. Keep it for ! and ? since
+        # those don't cue letter-name pronunciation on their own.
+        end = m.end()
+        if end < len(text) and text[end] == ".":
+            return letter
+        return f"{letter}."
+    return _QUOTED_LETTER_RE.sub(repl, text)
+
+
 def _apply_tts_homographs(text: str) -> str:
     def repl(m: re.Match[str]) -> str:
         w = m.group(0)
@@ -429,6 +453,7 @@ def normalize(story: Story, cfg: Config) -> str:
     text = _apply_apostrophe_restore(text)
     text = _apply_possessive_restore(text)
     text = _apply_tts_homographs(text)
+    text = _expand_quoted_letter_aliases(text)
     text = _split_numeric_hyphen(text)
     text = _expand_blood_types(text)
     text = _fix_etc_punct(text)
