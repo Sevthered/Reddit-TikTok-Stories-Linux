@@ -59,7 +59,7 @@ height = 1920
 fps = 30
 video_bitrate = "10M"
 audio_bitrate = "192k"
-target_min_seconds = 80     # TikTok monetization floor (1:20)
+target_min_seconds = 100    # bias toward longer artifacts for this batch (was 80)
 target_max_seconds = 180    # 3 min cap; well under TikTok's 10-min limit
 
 [upload]
