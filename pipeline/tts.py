@@ -69,6 +69,30 @@ def _ffprobe_duration_s(path: Path) -> float:
     return float(json.loads(out)["format"]["duration"])
 
 
+_TRIM_THRESHOLD_DB = "-40dB"
+_TRIM_KEEP_MS = 50
+
+
+def _trim_silence(in_path: Path, out_path: Path) -> None:
+    """Strip leading + trailing silence from an edge-tts segment.
+
+    edge-tts emits ~200ms of leading silence and ~800ms of trailing silence
+    per chunk. Concatenating raw segments stacks those into ~1s gaps at
+    every sentence boundary on top of the configured inter-chunk pause."""
+    keep = _TRIM_KEEP_MS / 1000.0
+    af = (
+        f"silenceremove="
+        f"start_periods=1:start_silence={keep}:start_threshold={_TRIM_THRESHOLD_DB}:"
+        f"stop_periods=-1:stop_silence={keep}:stop_threshold={_TRIM_THRESHOLD_DB}"
+    )
+    cmd = [
+        "ffmpeg", "-y", "-i", str(in_path), "-af", af,
+        "-c:a", "libmp3lame", "-b:a", "192k", "-ar", "24000",
+        str(out_path),
+    ]
+    subprocess.run(cmd, check=True, capture_output=True)
+
+
 def _make_silence(out_path: Path, ms: int) -> None:
     sec = max(0.001, ms / 1000.0)
     cmd = [
@@ -122,11 +146,17 @@ def synthesize(text: str, cfg: Config, out_dir: Path | str) -> AudioResult:
 
     parts = asyncio.run(_synth_all(sentences, cfg.tts.voice, cfg.tts.rate, work))
 
+    trimmed: list[Path] = []
+    for p in parts:
+        t = p.with_name(p.stem + "_trim.mp3")
+        _trim_silence(p, t)
+        trimmed.append(t)
+
     silence = work / "silence.mp3"
     _make_silence(silence, cfg.tts.pause_between_sentences_ms)
 
     final_path = out_dir / "voice.mp3"
-    _concat_mp3s(parts, silence, final_path)
+    _concat_mp3s(trimmed, silence, final_path)
 
     duration_s = _ffprobe_duration_s(final_path)
     too_long = duration_s > float(cfg.video.target_max_seconds)
