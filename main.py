@@ -110,6 +110,7 @@ def main() -> int:
                            Path("data/output") / f"{story.id}.mp4")
             print(f"FINAL : {final}")
 
+            db.mark_used(story.id, title=story.title, platform="rendered")
             picked += 1
             print(f"PICKED #{picked}: {story.id}")
 
