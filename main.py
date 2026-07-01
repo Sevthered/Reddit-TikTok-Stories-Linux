@@ -12,7 +12,7 @@ from core.logging_setup import setup_logging
 from core.notify import Notifier, NotifierError
 from core.render_progress import RenderProgress
 from pipeline.assemble import render
-from pipeline.background import ensure_cached, make_clip, pick_random_cached
+from pipeline.background import ensure_cached, pick_random_cached, pick_window
 from pipeline.captions import build_ass
 from pipeline.clean import normalize
 from pipeline.cover import extract_cover, make_card
@@ -153,8 +153,8 @@ def main() -> int:
                 progress.mark("tts")
 
             bg_path = pick_random_cached(bgs)
-            clip = make_clip(bg_path, audio.duration_s, cfg, work_dir / "bg.mp4")
-            print(f"BG    : {clip.source.name} @ {clip.start_s:.2f}s -> {clip.path}")
+            clip = pick_window(bg_path, audio.duration_s, cfg)
+            print(f"BG    : {clip.source.name} @ {clip.start_s:.2f}s (window, no pre-encode)")
             if progress:
                 progress.mark("bg")
 
@@ -172,9 +172,11 @@ def main() -> int:
             if progress:
                 progress.mark("cov")
 
-            final = render(clip.path, audio.path, ass_path, cfg,
+            final = render(clip.source, audio.path, ass_path, cfg,
                            Path("data/output") / f"{story.id}.mp4",
-                           card_image=card_path)
+                           card_image=card_path,
+                           bg_start_s=clip.start_s,
+                           bg_duration_s=clip.duration_s)
             print(f"FINAL : {final}")
 
             cover_path = extract_cover(final, Path("data/output") / f"{story.id}_cover.png")

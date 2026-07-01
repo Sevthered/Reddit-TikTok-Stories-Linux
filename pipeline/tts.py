@@ -34,7 +34,9 @@ class AudioResult:
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"'(\[])")
 _MIN_SENTENCE_CHARS = 2
 _EDGE_RETRIES = 3
-_EDGE_INTER_CALL_SLEEP_S = 1.0
+_EDGE_INTER_CALL_SLEEP_S = 0.05   # was 1.0 — edge-tts has no announced rate limit;
+                                  # the retry+backoff in _synth_one handles any 429.
+_EDGE_CONCURRENCY = 6             # max concurrent edge-tts sentence syntheses
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -134,14 +136,26 @@ def _concat_mp3s(parts: list[Path], silence: Path, out_path: Path) -> None:
 
 
 async def _synth_all(sentences: list[str], voice: str, rate: str, work_dir: Path) -> list[Path]:
-    paths: list[Path] = []
-    for i, s in enumerate(sentences):
-        out = work_dir / f"seg_{i:04d}.mp3"
-        log.info("tts: synthesizing sentence %d/%d (%d chars)", i + 1, len(sentences), len(s))
-        await _synth_one(s, voice, rate, out)
-        paths.append(out)
-        if i < len(sentences) - 1:
-            await asyncio.sleep(_EDGE_INTER_CALL_SLEEP_S)
+    """Fan out sentence synthesis with bounded concurrency.
+
+    Order matters (we concat segments by index in synthesize()), so each
+    task writes to its own indexed path and we await them in an
+    asyncio.gather. Concurrency cap keeps us from opening more than
+    `_EDGE_CONCURRENCY` websockets to speech.platform.bing.com in parallel;
+    a small jitter sleep prevents a thundering herd of new WS handshakes
+    hitting the edge at exactly the same instant.
+    """
+    sem = asyncio.Semaphore(_EDGE_CONCURRENCY)
+    paths: list[Path] = [work_dir / f"seg_{i:04d}.mp3" for i in range(len(sentences))]
+
+    async def one(i: int, s: str) -> None:
+        async with sem:
+            log.info("tts: synthesizing sentence %d/%d (%d chars)", i + 1, len(sentences), len(s))
+            await _synth_one(s, voice, rate, paths[i])
+            if _EDGE_INTER_CALL_SLEEP_S > 0:
+                await asyncio.sleep(_EDGE_INTER_CALL_SLEEP_S)
+
+    await asyncio.gather(*(one(i, s) for i, s in enumerate(sentences)))
     return paths
 
 

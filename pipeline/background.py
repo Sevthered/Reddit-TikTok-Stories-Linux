@@ -112,20 +112,55 @@ def pick_random_cached(cached: list[Path], rng: random.Random | None = None) -> 
     return r.choice(cached)
 
 
-def make_clip(
+def pick_window(
+    bg_path: Path,
+    duration_s: float,
+    cfg: Config,  # noqa: ARG001 — kept for signature symmetry with legacy make_clip
+    rng: random.Random | None = None,
+) -> ClipResult:
+    """Pick a random `duration_s` window from `bg_path` without encoding.
+
+    The final assemble pass consumes the bg source directly via `-ss/-t`
+    on its own input + scale/crop inside filter_complex, so we no longer
+    pre-encode a bg.mp4. This eliminates ~4 min of libx264 work per
+    render on the OptiPlex 7040. Returns a ClipResult whose `.path` is
+    the untouched source file — callers that expect an encoded clip
+    should switch to the new `render()` signature that accepts
+    (bg_source, start_s, duration_s).
+    """
+    if duration_s <= 0:
+        raise ValueError(f"duration_s must be > 0, got {duration_s}")
+
+    src_dur = _ffprobe_duration_s(bg_path)
+    tail_pad = 1.0
+    if src_dur < duration_s + tail_pad:
+        raise ValueError(
+            f"source {bg_path.name} too short: {src_dur:.2f}s < required {duration_s + tail_pad:.2f}s"
+        )
+
+    r = rng or random.Random()
+    start_s = r.uniform(0.0, src_dur - duration_s - tail_pad)
+    log.info("clip window: %s @ %.2fs +%.2fs (no pre-encode)", bg_path.name, start_s, duration_s)
+    return ClipResult(path=bg_path, source=bg_path, start_s=start_s, duration_s=duration_s)
+
+
+def make_clip(  # noqa: D401 — retained for callers that pre-encode a bg mp4
     bg_path: Path,
     duration_s: float,
     cfg: Config,
     out_path: Path,
     rng: random.Random | None = None,
 ) -> ClipResult:
-    """Trim a random window of `duration_s` from `bg_path`, crop-fill to
-    `video.width × video.height`, output silent MP4 at `out_path`."""
+    """Legacy: encode a silent scaled/cropped window to `out_path`.
+
+    Superseded by `pick_window()` + the fused assemble pass. Kept for
+    any external caller / debug workflow that still wants a standalone
+    silent bg clip on disk. Not used by main.py anymore.
+    """
     if duration_s <= 0:
         raise ValueError(f"duration_s must be > 0, got {duration_s}")
 
     src_dur = _ffprobe_duration_s(bg_path)
-    # Leave a small tail so we don't read past EOF on imprecise seeks.
     tail_pad = 1.0
     if src_dur < duration_s + tail_pad:
         raise ValueError(
@@ -150,9 +185,11 @@ def make_clip(
         "-vf", vf,
         "-r", str(fps),
         "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "23",
         "-b:v", vbr,
         "-pix_fmt", "yuv420p",
-        "-an",  # silent: VO drives audio in assemble.py.
+        "-an",
         "-movflags", "+faststart",
         str(out_path),
     ]
