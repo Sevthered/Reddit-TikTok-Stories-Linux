@@ -163,6 +163,42 @@ class Notifier:
         except NotifierError as e:
             log.warning("edit caption failed for %d: %s", message_id, e)
 
+    def edit_message_text(self, message_id: int, text: str, *,
+                          parse_mode: str | None = "HTML",
+                          reply_markup: dict[str, Any] | None = None) -> None:
+        """Rewrite a plain-text message. Used for the render progress
+        checklist and the inline-keyboard config screens. Failures are
+        logged, not raised — the caller shouldn't crash because a chat
+        got deleted."""
+        payload: dict[str, Any] = {
+            "chat_id": self.chat_id,
+            "message_id": message_id,
+            "text": text,
+        }
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+        if reply_markup is not None:
+            payload["reply_markup"] = json.dumps(reply_markup)
+        try:
+            self._post("editMessageText", payload)
+        except NotifierError as e:
+            log.warning("editMessageText %d failed: %s", message_id, e)
+
+    def send_text_with_markup(self, text: str, reply_markup: dict[str, Any], *,
+                              parse_mode: str | None = "HTML") -> int:
+        """Send a text message with an inline keyboard attached. Returns
+        message_id so callers can edit it later (e.g. after the user
+        taps Start we blank the keyboard)."""
+        payload: dict[str, Any] = {
+            "chat_id": self.chat_id,
+            "text": text,
+            "reply_markup": json.dumps(reply_markup),
+        }
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+        result = self._post("sendMessage", payload)
+        return int(result.get("message_id", 0))
+
     def answer_callback(self, callback_query_id: str, text: str = "", *,
                         show_alert: bool = False) -> None:
         try:
@@ -216,6 +252,10 @@ def _handle_callback(notifier: Notifier, db, query: dict[str, Any]) -> None:
     msg = query.get("message") or {}
     msg_id = int(msg.get("message_id") or 0)
 
+    if data == "noop":
+        notifier.answer_callback(q_id)
+        return
+
     if data.startswith(_CB_APPROVE_PREFIX):
         post_id = data[len(_CB_APPROVE_PREFIX):]
         ok = db.approve(post_id)
@@ -225,12 +265,13 @@ def _handle_callback(notifier: Notifier, db, query: dict[str, Any]) -> None:
             log.info("approved %s via telegram", post_id)
         else:
             notifier.answer_callback(q_id, "Already decided", show_alert=True)
-    elif data.startswith(_CB_REJECT_PREFIX):
+        return
+
+    if data.startswith(_CB_REJECT_PREFIX):
         post_id = data[len(_CB_REJECT_PREFIX):]
         row = db.get_render(post_id)
         ok = db.reject(post_id)
         if ok:
-            # Delete artifacts.
             for p in (row.video_path, row.cover_path) if row else ():
                 if p and Path(p).exists():
                     try:
@@ -242,11 +283,283 @@ def _handle_callback(notifier: Notifier, db, query: dict[str, Any]) -> None:
             log.info("rejected %s via telegram", post_id)
         else:
             notifier.answer_callback(q_id, "Already decided", show_alert=True)
+        return
+
+    # ---- Config-screen navigation --------------------------------------
+    if data.startswith("nav|"):
+        _handle_nav(notifier, msg_id, q_id, data)
+        return
+
+    if data.startswith("r|"):
+        _handle_render_cb(notifier, msg_id, q_id, data)
+        return
+
+    if data == "upl_pick" or data.startswith("upl_pick|"):
+        _handle_upload_picker(notifier, msg_id, q_id, data)
+        return
+
+    if data.startswith("u|"):
+        _handle_upload_cb(notifier, msg_id, q_id, data)
+        return
+
+    if data.startswith("c|"):
+        _handle_confirm_cb(notifier, msg_id, q_id, data)
+        return
+
+    notifier.answer_callback(q_id, "unknown action", show_alert=True)
+
+
+def _handle_nav(notifier: Notifier, msg_id: int, q_id: str, data: str) -> None:
+    from core import tg_flows
+    kind = data.split("|", 1)[1]
+    if kind == "render":
+        notifier.edit_message_text(
+            msg_id, tg_flows.render_text(1, False),
+            reply_markup=tg_flows.render_keyboard(1, False),
+        )
+    elif kind == "upload":
+        # Show the picker FIRST — user chooses target, then lands on the
+        # settings screen with that post_id baked in.
+        _render_upload_picker(notifier, msg_id)
+    elif kind == "confirm":
+        notifier.edit_message_text(
+            msg_id, tg_flows.confirm_text(False),
+            reply_markup=tg_flows.confirm_keyboard(False),
+        )
+    notifier.answer_callback(q_id)
+
+
+def _render_upload_picker(notifier: Notifier, msg_id: int) -> None:
+    """Fetch approved rows from the webapp and repaint `msg_id` as a
+    picker. Falls back to a friendly empty state."""
+    from core import tg_flows
+    from core.webapp_client import WebappClient, WebappError
+    try:
+        approved = WebappClient().list_approved()
+    except WebappError as e:
+        notifier.edit_message_text(msg_id, f"🚀 <b>Upload</b>\n\n❌ {e}")
+        return
+    notifier.edit_message_text(
+        msg_id,
+        tg_flows.upload_picker_text(approved),
+        reply_markup=tg_flows.upload_picker_keyboard(approved),
+    )
+
+
+def _handle_upload_picker(notifier: Notifier, msg_id: int, q_id: str, data: str) -> None:
+    """`upl_pick` alone = re-list. `upl_pick|<post_id>` = go to settings
+    with that target."""
+    from core import tg_flows
+
+    if data == "upl_pick":
+        _render_upload_picker(notifier, msg_id)
+        notifier.answer_callback(q_id)
+        return
+
+    pid_raw = data.split("|", 1)[1]
+    post_id: str | None = None if pid_raw == tg_flows.NEXT_TOKEN else pid_raw
+
+    # Look up the row title so the settings screen can preview what
+    # you're about to send.
+    from core.webapp_client import WebappClient, WebappError
+    title: str | None = None
+    if post_id:
+        try:
+            for r in WebappClient().list_approved():
+                if r["post_id"] == post_id:
+                    title = r.get("title")
+                    break
+        except WebappError:
+            pass
+
+    notifier.edit_message_text(
+        msg_id,
+        tg_flows.upload_text("only_me", True, False, True, post_id=post_id, title=title),
+        reply_markup=tg_flows.upload_keyboard("only_me", True, False, True,
+                                              post_id=post_id),
+    )
+    notifier.answer_callback(q_id)
+
+
+def _handle_render_cb(notifier: Notifier, msg_id: int, q_id: str, data: str) -> None:
+    from core import tg_flows
+    from core.webapp_client import WebappClient, WebappError
+
+    parsed = tg_flows.parse_render(data)
+    if parsed is None:
+        notifier.answer_callback(q_id, "bad payload", show_alert=True)
+        return
+    limit, dry, action = parsed
+
+    if action == "s":
+        # Reset the message to a checklist stub so main.py can edit it
+        # in place, and blank the keyboard so the user can't re-click.
+        notifier.edit_message_text(
+            msg_id,
+            f"🎬 <b>Rendering</b>\nlimit={limit} dry={'on' if dry else 'off'}\n\n⏳ queued…",
+            reply_markup={"inline_keyboard": []},
+        )
+        try:
+            client = WebappClient()
+            job = client.start_render(
+                limit=limit, dry_run=dry,
+                progress_chat_id=notifier.chat_id,
+                progress_message_id=msg_id,
+            )
+            notifier.answer_callback(q_id, f"job {job.get('id','?')} started")
+        except WebappError as e:
+            notifier.edit_message_text(msg_id, f"❌ render failed to start: {e}")
+            notifier.answer_callback(q_id, "start failed", show_alert=True)
+        return
+
+    # Toggles just repaint the same message.
+    notifier.edit_message_text(
+        msg_id, tg_flows.render_text(limit, dry),
+        reply_markup=tg_flows.render_keyboard(limit, dry),
+    )
+    notifier.answer_callback(q_id)
+
+
+def _handle_upload_cb(notifier: Notifier, msg_id: int, q_id: str, data: str) -> None:
+    from core import tg_flows
+    from core.webapp_client import WebappClient, WebappError
+
+    parsed = tg_flows.parse_upload(data)
+    if parsed is None:
+        notifier.answer_callback(q_id, "bad payload", show_alert=True)
+        return
+    post_id, vis, aigc, force, dry, action = parsed
+
+    if action == "s":
+        target = post_id or "oldest"
+        summary_hdr = (
+            f"🚀 <b>Upload</b>\ntarget=<code>{target}</code> vis={vis} "
+            f"aigc={'on' if aigc else 'off'} "
+            f"force={'on' if force else 'off'} dry={'on' if dry else 'off'}"
+        )
+        notifier.edit_message_text(
+            msg_id, f"{summary_hdr}\n\n⏳ queued…",
+            reply_markup={"inline_keyboard": []},
+        )
+        try:
+            client = WebappClient()
+            job = client.start_upload(visibility=vis, force=force,
+                                      dry_run=dry, aigc=aigc, post_id=post_id)
+            job_id = job.get("id", "?")
+            notifier.answer_callback(q_id, f"job {job_id} started")
+            final = client.wait_for_short_job(job_id, timeout_s=5.0)
+            _finalize_upload_message(notifier, client, msg_id, summary_hdr, final)
+        except WebappError as e:
+            notifier.edit_message_text(msg_id, f"{summary_hdr}\n\n❌ failed to start: {e}")
+            notifier.answer_callback(q_id, "start failed", show_alert=True)
+        return
+
+    notifier.edit_message_text(
+        msg_id, tg_flows.upload_text(vis, aigc, force, dry, post_id=post_id),
+        reply_markup=tg_flows.upload_keyboard(vis, aigc, force, dry, post_id=post_id),
+    )
+    notifier.answer_callback(q_id)
+
+
+def _handle_confirm_cb(notifier: Notifier, msg_id: int, q_id: str, data: str) -> None:
+    from core import tg_flows
+    from core.webapp_client import WebappClient, WebappError
+
+    parsed = tg_flows.parse_confirm(data)
+    if parsed is None:
+        notifier.answer_callback(q_id, "bad payload", show_alert=True)
+        return
+    force, action = parsed
+
+    if action == "s":
+        summary_hdr = f"🔍 <b>Confirm</b>\nforce={'on' if force else 'off'}"
+        notifier.edit_message_text(
+            msg_id, f"{summary_hdr}\n\n⏳ queued…",
+            reply_markup={"inline_keyboard": []},
+        )
+        try:
+            client = WebappClient()
+            job = client.start_confirm(force=force)
+            job_id = job.get("id", "?")
+            notifier.answer_callback(q_id, f"job {job_id} started")
+            final = client.wait_for_short_job(job_id, timeout_s=10.0)
+            _finalize_confirm_message(notifier, client, msg_id, summary_hdr, final)
+        except WebappError as e:
+            notifier.edit_message_text(msg_id, f"{summary_hdr}\n\n❌ failed to start: {e}")
+            notifier.answer_callback(q_id, "start failed", show_alert=True)
+        return
+
+    notifier.edit_message_text(
+        msg_id, tg_flows.confirm_text(force),
+        reply_markup=tg_flows.confirm_keyboard(force),
+    )
+    notifier.answer_callback(q_id)
+
+
+def _finalize_upload_message(notifier, client, msg_id: int, hdr: str,
+                             final_job: dict[str, Any]) -> None:
+    """Called after wait_for_short_job. Renders an outcome badge into
+    the Telegram msg so the user knows if the upload actually ran or
+    skipped for a reason (gates closed / dry-run / auth error)."""
+    if final_job.get("running"):
+        notifier.edit_message_text(
+            msg_id,
+            f"{hdr}\n\n⏳ running (long upload — check Jobs page for tail)",
+        )
+        return
+    exit_code = final_job.get("exit_code")
+    tail = client.job_tail_text(final_job.get("id", ""), timeout_s=1.5,
+                                max_bytes=1200)
+    last = _last_meaningful_line(tail)
+    if exit_code == 0:
+        # Gates-closed / dry-run exit cleanly with a `nothing to do` /
+        # `dry-run: would upload` INFO line at the end. Bubble it up.
+        badge = "⏸" if ("nothing to do" in last or "gates closed" in last) else "✅"
+        notifier.edit_message_text(
+            msg_id,
+            f"{hdr}\n\n{badge} exit 0\n<pre>{_html_escape(last[:400])}</pre>",
+            parse_mode="HTML",
+        )
     else:
-        notifier.answer_callback(q_id, "unknown action", show_alert=True)
+        notifier.edit_message_text(
+            msg_id,
+            f"{hdr}\n\n❌ exit {exit_code}\n<pre>{_html_escape(last[:400])}</pre>",
+            parse_mode="HTML",
+        )
+
+
+def _finalize_confirm_message(notifier, client, msg_id: int, hdr: str,
+                              final_job: dict[str, Any]) -> None:
+    if final_job.get("running"):
+        notifier.edit_message_text(msg_id, f"{hdr}\n\n⏳ still scraping…")
+        return
+    exit_code = final_job.get("exit_code")
+    tail = client.job_tail_text(final_job.get("id", ""), timeout_s=1.5,
+                                max_bytes=1200)
+    last = _last_meaningful_line(tail)
+    badge = "✅" if exit_code == 0 else "❌"
+    notifier.edit_message_text(
+        msg_id,
+        f"{hdr}\n\n{badge} exit {exit_code}\n<pre>{_html_escape(last[:400])}</pre>",
+        parse_mode="HTML",
+    )
+
+
+def _last_meaningful_line(tail: str) -> str:
+    """Grab the last non-empty log line from a stream tail. Skips SSE
+    heartbeats + framing noise."""
+    for ln in reversed(tail.splitlines()):
+        s = ln.strip()
+        if s and s != "ping" and not s.isdigit():
+            return s
+    return "(no output)"
 
 
 def _handle_message(notifier: Notifier, db, msg: dict[str, Any]) -> None:
+    from core import tg_flows
+    from core.agents import list_agent_status
+    from core.time_fmt import pretty
+
     text = (msg.get("text") or "").strip()
     if not text.startswith("/"):
         return
@@ -255,24 +568,78 @@ def _handle_message(notifier: Notifier, db, msg: dict[str, Any]) -> None:
     if cmd in ("/pause", "/stop"):
         db.set_uploads_enabled(False)
         notifier.send_text("⏸ uploads paused")
+
     elif cmd in ("/resume", "/start"):
         db.set_uploads_enabled(True)
         notifier.send_text("▶ uploads resumed")
+
     elif cmd == "/status":
         pending = len(db.pending_renders())
         review = len(db.under_review())
-        today = db.posts_today(1)  # CET offset
-        last = db.last_uploaded_at() or "never"
+        today = db.posts_today(1)
+        last = db.last_uploaded_at()
         enabled = db.is_uploads_enabled()
-        notifier.send_text(
-            f"📊 pending: {pending}\n"
-            f"under review: {review}\n"
-            f"posted today: {today}/2\n"
-            f"last upload: {last}\n"
-            f"uploads enabled: {'yes' if enabled else 'no'}"
+        agents = list_agent_status()
+        agent_lines = "\n".join(
+            f"  <code>{a.label.replace('com.sebastian.tiktok-','')}</code>: "
+            f"{'pid ' + str(a.pid) if a.pid else ('loaded' if a.loaded else 'unloaded')}"
+            for a in agents
         )
+        notifier.send_text(
+            "📊 <b>Status</b>\n"
+            f"pending: <b>{pending}</b>\n"
+            f"under review: <b>{review}</b>\n"
+            f"posted today: <b>{today}/2</b>\n"
+            f"last upload: {pretty(last)}\n"
+            f"uploads: {'✅ enabled' if enabled else '⏸ paused'}\n\n"
+            "<b>Agents</b>\n"
+            f"{agent_lines}",
+            parse_mode="HTML",
+        )
+
+    elif cmd == "/queue":
+        pend = db.pending_renders()[:5]
+        rev = db.under_review()[:3]
+        parts = ["🗂 <b>Queue</b>"]
+        if pend:
+            parts.append("\n<b>Pending review</b>")
+            for r in pend:
+                parts.append(f"  <code>{r.post_id}</code> — {_html_escape(r.title[:60])}")
+        else:
+            parts.append("\n<i>no pending renders</i>")
+        if rev:
+            parts.append("\n<b>Awaiting confirm-live</b>")
+            for r in rev:
+                parts.append(f"  <code>{r.post_id}</code> — {_html_escape(r.title[:60])}")
+        notifier.send_text("\n".join(parts), parse_mode="HTML")
+
+    elif cmd == "/menu":
+        notifier.send_text_with_markup(tg_flows.menu_text(), tg_flows.menu_keyboard())
+
+    elif cmd == "/render":
+        notifier.send_text_with_markup(
+            tg_flows.render_text(1, False), tg_flows.render_keyboard(1, False),
+        )
+
+    elif cmd == "/upload":
+        # Send an empty shell, then repaint into a picker. That's one
+        # extra edit call but keeps the "picker first" UX consistent
+        # with the /menu → Upload flow.
+        shell_id = notifier.send_text_with_markup(
+            "🚀 <b>Upload</b>\n\nloading approved rows…",
+            {"inline_keyboard": []},
+        )
+        _render_upload_picker(notifier, shell_id)
+
+    elif cmd == "/confirm":
+        notifier.send_text_with_markup(
+            tg_flows.confirm_text(False), tg_flows.confirm_keyboard(False),
+        )
+
     else:
-        notifier.send_text(f"unknown command: {cmd}. commands: /pause /resume /status")
+        notifier.send_text(
+            "commands: /menu /render /upload /confirm /status /queue /pause /resume"
+        )
 
 
 def run_callback_bot(db, *, notifier: Notifier | None = None,

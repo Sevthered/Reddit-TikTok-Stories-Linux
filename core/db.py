@@ -244,6 +244,22 @@ class Db:
             uploaded_at=row[11], tiktok_url=row[12],
         )
 
+    def claim_specific_upload(self, post_id: str) -> RenderRow | None:
+        """Target a specific post_id — `approved` → `uploading`. Returns
+        None if the row is not in `approved` state (already uploading,
+        posted, or rejected). Used by the Telegram upload picker."""
+        upd = self._conn.execute(
+            """
+            UPDATE used
+               SET upload_status = ?, next_retry_at = NULL
+             WHERE post_id = ? AND upload_status = ?
+            """,
+            (UPLOAD_UPLOADING, post_id, UPLOAD_APPROVED),
+        )
+        if upd.rowcount == 0:
+            return None
+        return self.get_render(post_id)
+
     def claim_next_upload(self, now_iso: str | None = None) -> RenderRow | None:
         """Atomically pick the oldest `approved` row whose `next_retry_at` has
         passed (or is NULL), flip it to `uploading`, and return it. Returns

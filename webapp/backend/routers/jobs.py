@@ -54,6 +54,11 @@ class JobOut(BaseModel):
 class RenderIn(BaseModel):
     limit: int = Field(1, ge=1, le=10)
     dry_run: bool = False
+    # When set, main.py sends per-stage progress edits to this Telegram
+    # message (bot → API round-trip; the message is pre-created by the
+    # bot so it can echo `✅ background`, `✅ TTS`, …).
+    progress_chat_id: int | None = None
+    progress_message_id: int | None = None
 
 
 class UploadIn(BaseModel):
@@ -61,6 +66,7 @@ class UploadIn(BaseModel):
     dry_run: bool = False
     visibility: Literal["public", "only_me", "friends"] = "public"
     aigc: bool = True
+    post_id: str | None = None  # target a specific approved row
 
 
 class ConfirmIn(BaseModel):
@@ -97,6 +103,11 @@ async def start_render(payload: RenderIn, request: Request) -> JobOut:
     args = ["--limit", str(payload.limit)]
     if payload.dry_run:
         args.append("--dry-run")
+    if payload.progress_chat_id is not None and payload.progress_message_id is not None:
+        args += [
+            "--progress-chat-id", str(payload.progress_chat_id),
+            "--progress-message-id", str(payload.progress_message_id),
+        ]
     return await _start(request, "render", args)
 
 
@@ -109,6 +120,8 @@ async def start_upload(payload: UploadIn, request: Request) -> JobOut:
         args.append("--dry-run")
     if not payload.aigc:
         args.append("--no-aigc")
+    if payload.post_id:
+        args += ["--post-id", payload.post_id]
     return await _start(request, "upload", args)
 
 

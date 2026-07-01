@@ -169,7 +169,8 @@ def _notify_failure(notifier: Notifier | None, row: RenderRow, err: Exception,
 # ---- Core run --------------------------------------------------------------
 
 def run_once(*, force: bool = False, dry_run: bool = False,
-             visibility: str = "public", aigc: bool = True) -> int:
+             visibility: str = "public", aigc: bool = True,
+             post_id: str | None = None) -> int:
     _load_dotenv()
     setup_logging()
 
@@ -193,10 +194,16 @@ def run_once(*, force: bool = False, dry_run: bool = False,
             log.info("gates closed: %s — nothing to do", reason)
             return 0
 
-        row = db.claim_next_upload()
-        if row is None:
-            log.info("no approved rows waiting; nothing to do")
-            return 0
+        if post_id is not None:
+            row = db.claim_specific_upload(post_id)
+            if row is None:
+                log.info("post_id %s not in `approved` state — nothing to do", post_id)
+                return 0
+        else:
+            row = db.claim_next_upload()
+            if row is None:
+                log.info("no approved rows waiting; nothing to do")
+                return 0
 
         log.info("claimed %s (attempt %d) → uploading",
                  row.post_id, row.upload_attempts + 1)
@@ -258,9 +265,13 @@ def main(argv: list[str] | None = None) -> int:
                         "toggle. Default is ON — safer w.r.t. TikTok's "
                         "AI-content policy.")
     p.set_defaults(aigc=True)
+    p.add_argument("--post-id", default=None,
+                   help="claim this specific approved row instead of the "
+                        "oldest one (used by the Telegram picker).")
     args = p.parse_args(argv)
     return run_once(force=args.force, dry_run=args.dry_run,
-                    visibility=args.visibility, aigc=args.aigc)
+                    visibility=args.visibility, aigc=args.aigc,
+                    post_id=args.post_id)
 
 
 if __name__ == "__main__":
