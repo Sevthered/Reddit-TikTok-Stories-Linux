@@ -416,11 +416,26 @@ class Db:
         )
         return [self.get_render(r[0]) for r in cur.fetchall() if r[0]]  # type: ignore[misc]
 
-    def posts_today(self, tz_hours_offset: int = 0) -> int:
+    def posts_today(self, tz: str | int = "Europe/Madrid") -> int:
         """Count rows with upload_status in {posted, posted_under_review} whose
-        uploaded_at falls on today's local date (tz_hours_offset from UTC)."""
-        # Uses SQLite date() with an inline offset via strftime.
-        offset_h = f"{tz_hours_offset:+d} hours"
+        uploaded_at falls on today's local date in the given timezone.
+
+        `tz` accepts either an IANA zone name (recommended, DST-aware) or a
+        legacy integer hours-offset (kept for callers that still pass ints).
+        """
+        from datetime import datetime, timezone
+        from zoneinfo import ZoneInfo
+
+        if isinstance(tz, int):
+            offset_h = f"{tz:+d} hours"
+        else:
+            # Compute the current UTC offset for this IANA zone right now,
+            # so DST changes (e.g. CET ↔ CEST) don't silently drift the
+            # bucket boundary. Recomputed on every call, which is cheap.
+            now_utc = datetime.now(timezone.utc)
+            local = now_utc.astimezone(ZoneInfo(tz))
+            hours = int(local.utcoffset().total_seconds() // 3600) if local.utcoffset() else 0
+            offset_h = f"{hours:+d} hours"
         cur = self._conn.execute(
             """
             SELECT COUNT(*) FROM used

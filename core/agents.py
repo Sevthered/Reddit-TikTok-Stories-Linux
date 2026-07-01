@@ -1,9 +1,12 @@
-"""Snapshot the pipeline's launchd agents.
+"""Snapshot the pipeline's systemd units.
 
 Shared between the webapp `GET /api/status` and the Telegram bot's
-`/status` command. Reads `launchctl list` and returns the four labels
-we care about with (loaded, pid, last_exit_code). Never raises — a
-launchd hiccup shows as an empty snapshot, callers surface `unknown`.
+`/status` command. Reads `systemctl show` for the units we care about
+and returns (loaded, pid, last_exit_code). Never raises — a systemd
+hiccup shows as an empty snapshot, callers surface `unknown`.
+
+Labels are the systemd unit names without `.service`. This module
+appends `.service` only when invoking systemctl.
 """
 from __future__ import annotations
 
@@ -14,10 +17,11 @@ from dataclasses import dataclass
 log = logging.getLogger(__name__)
 
 AGENT_LABELS: tuple[str, ...] = (
-    "com.sebastian.tiktok-bot",
-    "com.sebastian.tiktok-upload",
-    "com.sebastian.tiktok-confirm",
-    "com.sebastian.tiktok-webapp",
+    "tiktok-bot",
+    "tiktok-upload",
+    "tiktok-confirm",
+    "tiktok-webapp",
+    "tiktok-xvfb",
 )
 
 
@@ -29,39 +33,61 @@ class AgentStatus:
     last_exit_code: int | None
 
 
-def _launchctl_snapshot() -> dict[str, tuple[int | None, int | None]]:
-    """Parse `launchctl list` into {label: (pid_or_None, exit_or_None)}."""
-    try:
-        out = subprocess.check_output(
-            ["launchctl", "list"], text=True, timeout=5,
-        )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
-            FileNotFoundError) as e:
-        log.warning("launchctl list failed: %s", e)
-        return {}
+def _systemctl_snapshot() -> dict[str, tuple[int | None, int | None]]:
+    """Query systemd for {label: (pid_or_None, exit_or_None)}.
 
+    Uses `systemctl show --value -p MainPID -p ExecMainStatus -p ActiveState`
+    per unit. A unit is `loaded` iff ActiveState in {active, activating}.
+    """
     snap: dict[str, tuple[int | None, int | None]] = {}
-    for line in out.splitlines()[1:]:  # skip header
-        parts = line.split(None, 2)
-        if len(parts) < 3:
+    for label in AGENT_LABELS:
+        unit = f"{label}.service"
+        try:
+            out = subprocess.check_output(
+                [
+                    "systemctl", "show", unit,
+                    "--property=MainPID",
+                    "--property=ExecMainStatus",
+                    "--property=ActiveState",
+                    "--no-page",
+                ],
+                text=True,
+                timeout=5,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+            log.warning("systemctl show %s failed: %s", unit, e)
             continue
-        pid_s, status_s, label = parts
+
+        fields: dict[str, str] = {}
+        for line in out.splitlines():
+            if "=" in line:
+                k, _, v = line.partition("=")
+                fields[k.strip()] = v.strip()
+
+        active = fields.get("ActiveState", "")
+        pid_raw = fields.get("MainPID", "0")
+        exit_raw = fields.get("ExecMainStatus", "")
+
         try:
-            pid = int(pid_s) if pid_s != "-" else None
+            pid = int(pid_raw)
         except ValueError:
-            pid = None
+            pid = 0
+        pid = pid if pid > 0 else None
+
         try:
-            status = int(status_s)
+            exit_code = int(exit_raw) if exit_raw else None
         except ValueError:
-            status = None
-        snap[label] = (pid, status)
+            exit_code = None
+
+        if active in ("active", "activating") or pid is not None or exit_code is not None:
+            snap[label] = (pid, exit_code)
     return snap
 
 
 def list_agent_status() -> list[AgentStatus]:
     """Public API — returns one AgentStatus per known label, in
     AGENT_LABELS order."""
-    snap = _launchctl_snapshot()
+    snap = _systemctl_snapshot()
     return [
         AgentStatus(
             label=label,

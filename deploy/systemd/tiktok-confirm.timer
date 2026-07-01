@@ -1,0 +1,12 @@
+[Unit]
+Description=Fire tiktok-confirm every 30 min
+Requires=tiktok-confirm.service
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+Persistent=true
+Unit=tiktok-confirm.service
+
+[Install]
+WantedBy=timers.target

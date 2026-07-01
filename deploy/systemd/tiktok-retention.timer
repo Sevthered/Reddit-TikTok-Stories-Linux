@@ -1,0 +1,12 @@
+[Unit]
+Description=Hourly retention sweep for terminal-state renders
+Requires=tiktok-retention.service
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=1h
+Persistent=true
+Unit=tiktok-retention.service
+
+[Install]
+WantedBy=timers.target

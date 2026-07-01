@@ -1,0 +1,14 @@
+[Unit]
+Description=Delete artifacts for posts that reached terminal state
+
+[Service]
+Type=oneshot
+User=christian
+Group=christian
+WorkingDirectory=/srv/tiktok/app
+EnvironmentFile=/srv/tiktok/app/.env
+Environment=TZ=Europe/Madrid
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/srv/tiktok/app/.venv/bin/python -u -m pipeline.retention
+StandardOutput=journal
+StandardError=journal

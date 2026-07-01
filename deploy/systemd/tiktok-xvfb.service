@@ -1,0 +1,17 @@
+[Unit]
+Description=Xvfb virtual display :99 for Playwright headed uploads
+After=network.target
+
+[Service]
+Type=simple
+User=christian
+Group=christian
+ExecStart=/usr/bin/Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp
+Restart=on-failure
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+OnFailure=tiktok-notify@%n.service
+
+[Install]
+WantedBy=multi-user.target

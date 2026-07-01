@@ -1,0 +1,24 @@
+[Unit]
+Description=TikTok control-plane FastAPI + SPA
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=christian
+Group=christian
+WorkingDirectory=/srv/tiktok/app
+EnvironmentFile=/srv/tiktok/app/.env
+Environment=TZ=Europe/Madrid
+Environment=PYTHONUNBUFFERED=1
+Environment=PLAYWRIGHT_BROWSERS_PATH=/srv/tiktok/app/.playwright
+Environment=WEBAPP_ALLOW_ANY_HOST=1
+ExecStart=/srv/tiktok/app/.venv/bin/python -u -m uvicorn webapp.backend.app:app --host 0.0.0.0 --port 8765
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+OnFailure=tiktok-notify@%n.service
+
+[Install]
+WantedBy=multi-user.target

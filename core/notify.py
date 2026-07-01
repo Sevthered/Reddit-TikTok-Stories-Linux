@@ -581,7 +581,7 @@ def _handle_message(notifier: Notifier, db, msg: dict[str, Any]) -> None:
         enabled = db.is_uploads_enabled()
         agents = list_agent_status()
         agent_lines = "\n".join(
-            f"  <code>{a.label.replace('com.sebastian.tiktok-','')}</code>: "
+            f"  <code>{a.label.replace('tiktok-','')}</code>: "
             f"{'pid ' + str(a.pid) if a.pid else ('loaded' if a.loaded else 'unloaded')}"
             for a in agents
         )

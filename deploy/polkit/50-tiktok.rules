@@ -1,0 +1,19 @@
+// Allow the `christian` user to start/stop/restart tiktok-* units
+// without a sudo password. Scoped narrowly to just these units.
+polkit.addRule(function(action, subject) {
+    if (action.id === "org.freedesktop.systemd1.manage-units" &&
+        subject.user === "christian") {
+        var unit = action.lookup("unit");
+        if (unit === "tiktok-webapp.service"    ||
+            unit === "tiktok-bot.service"       ||
+            unit === "tiktok-xvfb.service"      ||
+            unit === "tiktok-upload.service"    ||
+            unit === "tiktok-confirm.service"   ||
+            unit === "tiktok-retention.service" ||
+            unit === "tiktok-upload.timer"      ||
+            unit === "tiktok-confirm.timer"     ||
+            unit === "tiktok-retention.timer") {
+            return polkit.Result.YES;
+        }
+    }
+});

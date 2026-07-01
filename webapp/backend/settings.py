@@ -1,7 +1,7 @@
 """Repo-scoped paths, host/port, and dev-mode toggle for the dashboard.
 
 Everything derives from the repo root so the app runs from any CWD (main
-use case: launchd under `WorkingDirectory=/Users/sebastian/Automated-TikTok-Upload`).
+use case: systemd unit under `WorkingDirectory=/srv/tiktok/app`).
 """
 from __future__ import annotations
 
@@ -41,14 +41,27 @@ DEV_ORIGINS: list[str] = [
 # ---- Security -------------------------------------------------------------
 
 # Host-header allowlist middleware — closes DNS-rebinding on the
-# loopback dashboard (research report §H, 2026-07-01). Extend when the
-# port or bind address changes.
+# loopback dashboard (research report §H, 2026-07-01). Extend via
+# WEBAPP_ALLOWED_HOSTS (comma-separated) when binding to LAN so the
+# server-IP and hostname pass the check.
 ALLOWED_HOSTS: set[str] = {
     f"127.0.0.1:{PORT}",
     f"localhost:{PORT}",
     "127.0.0.1",
     "localhost",
 }
+_extra_hosts = os.environ.get("WEBAPP_ALLOWED_HOSTS", "")
+for h in _extra_hosts.split(","):
+    h = h.strip()
+    if h:
+        ALLOWED_HOSTS.add(h)
+        if ":" not in h:
+            ALLOWED_HOSTS.add(f"{h}:{PORT}")
+
+# `WEBAPP_ALLOW_ANY_HOST=1` disables the check entirely — useful on a
+# LAN-only server where the allowlist adds friction without security value.
+ALLOW_ANY_HOST: bool = os.environ.get("WEBAPP_ALLOW_ANY_HOST", "0") == "1"
+
 if DEV_MODE:
     # SvelteKit dev server originates its own /api proxies with its Host,
     # which passes through unchanged.

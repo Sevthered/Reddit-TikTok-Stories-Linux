@@ -1,0 +1,22 @@
+[Unit]
+Description=TikTok Telegram approval bot
+After=tiktok-webapp.service
+Wants=tiktok-webapp.service
+
+[Service]
+Type=simple
+User=christian
+Group=christian
+WorkingDirectory=/srv/tiktok/app
+EnvironmentFile=/srv/tiktok/app/.env
+Environment=TZ=Europe/Madrid
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/srv/tiktok/app/.venv/bin/python -u scripts/run_bot.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+OnFailure=tiktok-notify@%n.service
+
+[Install]
+WantedBy=multi-user.target

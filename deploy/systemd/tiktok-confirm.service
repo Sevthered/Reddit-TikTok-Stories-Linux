@@ -1,0 +1,16 @@
+[Unit]
+Description=TikTok confirm-live scrape (moves posted_under_review -> posted)
+
+[Service]
+Type=oneshot
+User=christian
+Group=christian
+WorkingDirectory=/srv/tiktok/app
+EnvironmentFile=/srv/tiktok/app/.env
+Environment=TZ=Europe/Madrid
+Environment=PYTHONUNBUFFERED=1
+Environment=PLAYWRIGHT_BROWSERS_PATH=/srv/tiktok/app/.playwright
+ExecStart=/srv/tiktok/app/.venv/bin/python -u pipeline/confirm_live.py
+StandardOutput=journal
+StandardError=journal
+OnFailure=tiktok-notify@%n.service

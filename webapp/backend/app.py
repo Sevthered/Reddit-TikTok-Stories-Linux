@@ -80,6 +80,8 @@ app = FastAPI(
 # so a strict allowlist kills the attack. Ref: research §H (2026-07-01).
 @app.middleware("http")
 async def host_allowlist(request: Request, call_next):
+    if settings.ALLOW_ANY_HOST:
+        return await call_next(request)
     host = (request.headers.get("host") or "").lower()
     if host not in settings.ALLOWED_HOSTS:
         log.warning("rejected host header %r from %s", host, request.client)
