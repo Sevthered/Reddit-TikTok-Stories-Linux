@@ -25,6 +25,11 @@ pydantic==2.13.4
 # Post-install (one-time):
 #   ./venv/bin/playwright install chromium
 
+# Web-app (Phase 2+; see wiki/sources/webapp-research-2026-07-01.md)
+fastapi==0.139.0
+uvicorn[standard]==0.49.0
+python-multipart==0.0.32
+
 # Deferred — uncomment as later phases land:
 # kokoro==0.7.16           # Phase 2 (offline TTS fallback)
 # faster-whisper==1.0.3    # Phase 4 (CPU fallback)

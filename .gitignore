@@ -22,3 +22,9 @@ compass_artifact_*.md
 .smart-connections/
 .obsidian-git-data
 .trash/
+
+# Local Claude Code state + root shadcn MCP scaffold (kept via .mcp.json only)
+.claude/
+node_modules/
+package-lock.json
+pnpm-lock.yaml

@@ -95,7 +95,15 @@ class Db:
     def open(cls, path: str | Path = "data/used_stories.db"):
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(p, isolation_level=None)  # autocommit; we manage txns
+        # `check_same_thread=False` is required by the FastAPI dashboard,
+        # which opens the DB from a threadpool thread that differs across
+        # requests. Safe for existing sync callers because they always use
+        # one connection per context and never share it across threads.
+        conn = sqlite3.connect(p, isolation_level=None, check_same_thread=False)
+        # Coexist with the always-on Telegram bot writer: wait up to 5 s
+        # for the write lock before raising SQLITE_BUSY (WAL allows one
+        # writer at a time across processes).
+        conn.execute("PRAGMA busy_timeout=5000")
         try:
             conn.executescript(_SCHEMA)
             for col_name, col_def in _PHASE6_COLUMNS:
@@ -365,6 +373,19 @@ class Db:
              ORDER BY created_at ASC
             """,
             (UPLOAD_PENDING,),
+        )
+        return [self.get_render(r[0]) for r in cur.fetchall() if r[0]]  # type: ignore[misc]
+
+    def approved_ready(self) -> list[RenderRow]:
+        """Rows waiting for the upload worker to claim them. Oldest first —
+        `run_once` in upload_worker.py picks the head of this queue."""
+        cur = self._conn.execute(
+            """
+            SELECT post_id FROM used
+             WHERE upload_status = ?
+             ORDER BY approved_at ASC
+            """,
+            (UPLOAD_APPROVED,),
         )
         return [self.get_render(r[0]) for r in cur.fetchall() if r[0]]  # type: ignore[misc]
 

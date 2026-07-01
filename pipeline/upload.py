@@ -151,6 +151,59 @@ def _dismiss_cookie_consent(page: Page) -> None:
             continue
 
 
+def _dismiss_studio_tooltips(page: Page, max_rounds: int = 8) -> None:
+    """TikTok Studio ships a multi-step onboarding walkthrough (tooltips
+    pointing at the caption editor, visibility switch, etc.). Any of its
+    steps captures pointer events and blocks Playwright clicks on the
+    real controls underneath.
+
+    Strategy: try one of the exit buttons per round (`Skip tour` /
+    `Got it` / final-step `Done` etc., plus ES/CN mirrors), wait ~600 ms
+    for the next step, repeat. Bail out once no known label is visible
+    or after `max_rounds` iterations. Idempotent when the tour never
+    shows up."""
+    labels = (
+        # EN
+        "Skip tour", "Skip", "Got it", "Got it, thanks", "Done", "Finish",
+        "Next", "OK", "Close",
+        # ES
+        "Omitir tour", "Omitir", "Entendido", "Entendido, gracias",
+        "Hecho", "Finalizar", "Siguiente", "Cerrar",
+        # CN — some tenants surface Chinese strings even w/ locale=en
+        "跳过", "知道了", "完成",
+    )
+    for _ in range(max_rounds):
+        clicked = False
+        for label in labels:
+            try:
+                btn = page.get_by_role("button", name=label, exact=False).first
+                if btn.is_visible(timeout=400):
+                    btn.click()
+                    log.info("dismissed studio tooltip: %r", label)
+                    page.wait_for_timeout(600)
+                    clicked = True
+                    break
+            except Exception:
+                continue
+        if not clicked:
+            # Fallback: try clicking a generic close icon inside a tour
+            # popover before giving up.
+            try:
+                close_x = page.locator(
+                    "[class*='tour'] [aria-label*='close' i], "
+                    "[class*='guide'] [aria-label*='close' i], "
+                    "[data-tt-tour] button[aria-label*='close' i]"
+                ).first
+                if close_x.is_visible(timeout=300):
+                    close_x.click()
+                    log.info("dismissed studio tooltip via close-icon fallback")
+                    page.wait_for_timeout(400)
+                    continue
+            except Exception:
+                pass
+            return
+
+
 def _fill_caption(page: Page, caption: str) -> None:
     """Draft.js editor lives inside `[data-e2e=caption_container]`. Focus it,
     select-all-delete any stub, then type. Emojis and newlines pass through
@@ -534,6 +587,11 @@ def upload_to_tiktok(
                 page.wait_for_selector(_SEL_CAPTION_EDITOR, timeout=90000)
             except PWTimeoutError as e:
                 raise TikTokDOMError(f"caption editor did not appear: {e}") from e
+
+            # Fresh cookie jars land in a Studio onboarding walkthrough —
+            # multi-step tooltip stack that blocks pointer events on the
+            # caption + visibility controls. Kill it before we type.
+            _dismiss_studio_tooltips(page)
 
             # ---- Caption ----
             _fill_caption(page, caption)

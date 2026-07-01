@@ -169,7 +169,7 @@ def _notify_failure(notifier: Notifier | None, row: RenderRow, err: Exception,
 # ---- Core run --------------------------------------------------------------
 
 def run_once(*, force: bool = False, dry_run: bool = False,
-             visibility: str = "public") -> int:
+             visibility: str = "public", aigc: bool = True) -> int:
     _load_dotenv()
     setup_logging()
 
@@ -214,7 +214,7 @@ def run_once(*, force: bool = False, dry_run: bool = False,
                 cover_path=None,   # first frame of the burned card is the cover
                 caption=row.caption,
                 visibility=visibility,  # type: ignore[arg-type]
-                aigc=True,
+                aigc=aigc,
             )
         except (TikTokAuthError, TikTokDOMError, UploadError) as e:
             elapsed = time.time() - started
@@ -253,9 +253,14 @@ def main(argv: list[str] | None = None) -> int:
                    choices=("public", "only_me", "friends"),
                    help="visibility to publish under. Default 'public'. "
                         "Use 'only_me' for smoke-testing without going live.")
+    p.add_argument("--no-aigc", dest="aigc", action="store_false",
+                   help="do NOT flip TikTok's AIGC (AI-generated content) "
+                        "toggle. Default is ON — safer w.r.t. TikTok's "
+                        "AI-content policy.")
+    p.set_defaults(aigc=True)
     args = p.parse_args(argv)
     return run_once(force=args.force, dry_run=args.dry_run,
-                    visibility=args.visibility)
+                    visibility=args.visibility, aigc=args.aigc)
 
 
 if __name__ == "__main__":

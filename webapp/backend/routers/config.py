@@ -1,0 +1,197 @@
+"""Config editor endpoints.
+
+- `config.toml` is edited as raw text. Validation goes through
+  `core.config.load_config` against a temp file before we atomically
+  `os.replace` the real file, so a bad edit never poisons the pipeline.
+
+- `.env` is exposed as a masked line list (secrets → `***<last4>`) and a
+  single-key PUT that rewrites only that key, preserving order + comments.
+  This keeps secret values out of the UI while still letting the user
+  rotate non-secret knobs.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+
+from core.config import ConfigError, load_config
+from webapp.backend import settings
+
+log = logging.getLogger("webapp.routers.config")
+
+router = APIRouter(prefix="/config", tags=["config"])
+
+# Heuristic: any env key whose name contains one of these tokens has its
+# value masked in GET /api/config/env. Extend as more secrets land.
+_SECRET_MARKERS: tuple[str, ...] = (
+    "TOKEN", "SECRET", "PASSWORD", "PASS", "KEY", "COOKIE",
+    "EMAIL", "HANDLE", "CHAT_ID",
+)
+
+
+def _is_secret(key: str) -> bool:
+    up = key.upper()
+    return any(m in up for m in _SECRET_MARKERS)
+
+
+def _mask(value: str) -> str:
+    if len(value) <= 4:
+        return "***"
+    return f"***{value[-4:]}"
+
+
+# ---- TOML ---------------------------------------------------------------
+
+
+class TomlOut(BaseModel):
+    path: str
+    content: str
+
+
+class TomlIn(BaseModel):
+    content: str = Field(..., description="Full config.toml payload")
+
+
+@router.get("/toml", response_model=TomlOut)
+def get_toml() -> TomlOut:
+    path = settings.CONFIG_PATH
+    if not path.exists():
+        raise HTTPException(500, detail=f"{path} missing")
+    return TomlOut(path=str(path), content=path.read_text(encoding="utf-8"))
+
+
+@router.put("/toml", response_model=TomlOut)
+def put_toml(payload: TomlIn) -> TomlOut:
+    path = settings.CONFIG_PATH
+    # Write to a temp file in the same directory so the atomic os.replace
+    # stays on-device. Validate with load_config before swap.
+    tmp_fd, tmp_path_s = tempfile.mkstemp(
+        prefix=".config-", suffix=".toml.tmp", dir=str(path.parent),
+    )
+    tmp_path = Path(tmp_path_s)
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            f.write(payload.content)
+        try:
+            load_config(tmp_path)
+        except ConfigError as e:
+            raise HTTPException(422, detail=f"config invalid: {e}") from e
+        except Exception as e:  # noqa: BLE001  tomllib.TOMLDecodeError etc.
+            raise HTTPException(422, detail=f"toml parse error: {e}") from e
+        os.replace(tmp_path, path)
+        log.info("config.toml updated (%d bytes)", len(payload.content))
+    finally:
+        # os.replace consumed tmp_path on success; on failure clean up.
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+    return TomlOut(path=str(path), content=path.read_text(encoding="utf-8"))
+
+
+# ---- .env ---------------------------------------------------------------
+
+
+@dataclass
+class _EnvLine:
+    """One physical line of `.env`. `key` is None for comments/blanks so
+    we can round-trip formatting on PUT."""
+    key: str | None
+    value: str
+    raw: str
+
+
+class EnvEntry(BaseModel):
+    key: str
+    value_masked: str
+    is_secret: bool
+
+
+class EnvOut(BaseModel):
+    path: str
+    entries: list[EnvEntry]
+
+
+class EnvPut(BaseModel):
+    value: str = Field(..., description="Plain-text value; will be written verbatim")
+
+
+def _parse_env(text: str) -> list[_EnvLine]:
+    out: list[_EnvLine] = []
+    for raw in text.splitlines():
+        s = raw.strip()
+        if not s or s.startswith("#") or "=" not in s:
+            out.append(_EnvLine(key=None, value="", raw=raw))
+            continue
+        k, _, v = raw.partition("=")
+        k = k.strip()
+        v = v.strip().strip('"').strip("'")
+        out.append(_EnvLine(key=k, value=v, raw=raw))
+    return out
+
+
+@router.get("/env", response_model=EnvOut)
+def get_env() -> EnvOut:
+    path = settings.ENV_PATH
+    if not path.exists():
+        return EnvOut(path=str(path), entries=[])
+    parsed = _parse_env(path.read_text(encoding="utf-8"))
+    entries: list[EnvEntry] = []
+    for ln in parsed:
+        if ln.key is None:
+            continue
+        secret = _is_secret(ln.key)
+        entries.append(
+            EnvEntry(
+                key=ln.key,
+                value_masked=_mask(ln.value) if secret else ln.value,
+                is_secret=secret,
+            )
+        )
+    return EnvOut(path=str(path), entries=entries)
+
+
+@router.put("/env/{key}", response_model=EnvEntry)
+def put_env(key: str, payload: EnvPut) -> EnvEntry:
+    path = settings.ENV_PATH
+    if not path.exists():
+        raise HTTPException(404, detail=f"{path} missing")
+    parsed = _parse_env(path.read_text(encoding="utf-8"))
+    hit = False
+    for i, ln in enumerate(parsed):
+        if ln.key == key:
+            parsed[i] = _EnvLine(key=key, value=payload.value, raw=f"{key}={payload.value}")
+            hit = True
+            break
+    if not hit:
+        # Append at end, keeping trailing newline hygiene.
+        parsed.append(_EnvLine(key=key, value=payload.value, raw=f"{key}={payload.value}"))
+    tmp_fd, tmp_path_s = tempfile.mkstemp(
+        prefix=".env-", suffix=".tmp", dir=str(path.parent),
+    )
+    tmp_path = Path(tmp_path_s)
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            for ln in parsed:
+                f.write(ln.raw + "\n")
+        os.replace(tmp_path, path)
+    finally:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+    log.info(".env key %r updated", key)
+    secret = _is_secret(key)
+    return EnvEntry(
+        key=key,
+        value_masked=_mask(payload.value) if secret else payload.value,
+        is_secret=secret,
+    )

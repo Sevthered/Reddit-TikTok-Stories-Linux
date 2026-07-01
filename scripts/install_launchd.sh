@@ -1,31 +1,62 @@
 #!/usr/bin/env bash
-# One-shot installer for the two Phase 6 LaunchAgents.
+# LaunchAgent installer for the pipeline + control-plane webapp.
 #
-# Symlinks the repo's plists into ~/Library/LaunchAgents/ and loads them
-# with launchctl. Idempotent: re-run after editing a plist to bump.
+# Uses the modern launchctl domain API (`bootstrap`/`bootout`/`kickstart`)
+# under `gui/$(id -u)` — required for Playwright headful runs and macOS
+# keychain prompts to route to the Aqua session. Legacy `load`/`unload`
+# calls silently drop the GUI context and left Playwright orphaned when
+# a headful browser opened.
 #
 # Usage:
-#   ./scripts/install_launchd.sh install   # symlink + load
-#   ./scripts/install_launchd.sh uninstall # unload + unlink
-#   ./scripts/install_launchd.sh status    # show current state
-#   ./scripts/install_launchd.sh reload    # unload + reload (after plist edits)
+#   ./scripts/install_launchd.sh install     # build SPA + symlink + bootstrap
+#   ./scripts/install_launchd.sh reload      # bootout + bootstrap all
+#   ./scripts/install_launchd.sh uninstall   # bootout + unlink
+#   ./scripts/install_launchd.sh status      # show current state
+#   ./scripts/install_launchd.sh kickstart <label>   # force-restart one
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LA_DIR="$HOME/Library/LaunchAgents"
 LOG_DIR="$REPO_ROOT/data/logs"
+FRONT_DIR="$REPO_ROOT/webapp/frontend"
+DOMAIN="gui/$(id -u)"
+
 AGENTS=(
   "com.sebastian.tiktok-upload"
   "com.sebastian.tiktok-bot"
   "com.sebastian.tiktok-confirm"
+  "com.sebastian.tiktok-webapp"
 )
 
 mkdir -p "$LA_DIR" "$LOG_DIR"
+
+build_frontend() {
+  if [ ! -d "$FRONT_DIR" ]; then
+    echo "!! $FRONT_DIR missing — skip SPA build" >&2
+    return
+  fi
+  echo "→ building SvelteKit SPA (adapter-static)"
+  ( cd "$FRONT_DIR" && pnpm install --frozen-lockfile && pnpm build )
+}
+
+bootstrap_one() {
+  local a="$1"
+  local dst="$LA_DIR/${a}.plist"
+  launchctl bootout "$DOMAIN/${a}" 2>/dev/null || true
+  launchctl bootstrap "$DOMAIN" "$dst"
+  echo "bootstrapped $a"
+}
+
+bootout_one() {
+  local a="$1"
+  launchctl bootout "$DOMAIN/${a}" 2>/dev/null && echo "booted out $a" || echo "$a not loaded"
+}
 
 cmd="${1:-status}"
 
 case "$cmd" in
   install)
+    build_frontend
     for a in "${AGENTS[@]}"; do
       src="$REPO_ROOT/launchd/${a}.plist"
       dst="$LA_DIR/${a}.plist"
@@ -34,28 +65,31 @@ case "$cmd" in
         exit 1
       fi
       ln -sfv "$src" "$dst"
-      launchctl unload "$dst" 2>/dev/null || true
-      launchctl load "$dst"
-      echo "loaded $a"
+      bootstrap_one "$a"
     done
     echo "---"
-    echo "run 'launchctl list | grep sebastian' to verify"
+    launchctl list | grep -E "com\.sebastian\.tiktok" || true
+    ;;
+  reload)
+    build_frontend
+    for a in "${AGENTS[@]}"; do
+      dst="$LA_DIR/${a}.plist"
+      [ -f "$dst" ] || { echo "$a not installed; skip"; continue; }
+      launchctl bootout "$DOMAIN/${a}" 2>/dev/null || true
+      launchctl bootstrap "$DOMAIN" "$dst"
+      echo "reloaded $a"
+    done
     ;;
   uninstall)
     for a in "${AGENTS[@]}"; do
       dst="$LA_DIR/${a}.plist"
-      launchctl unload "$dst" 2>/dev/null || true
+      bootout_one "$a"
       rm -f "$dst"
-      echo "unloaded + unlinked $a"
     done
     ;;
-  reload)
-    for a in "${AGENTS[@]}"; do
-      dst="$LA_DIR/${a}.plist"
-      launchctl unload "$dst" 2>/dev/null || true
-      launchctl load "$dst"
-      echo "reloaded $a"
-    done
+  kickstart)
+    label="${2:?usage: kickstart <label>}"
+    launchctl kickstart -k "$DOMAIN/${label}"
     ;;
   status)
     launchctl list | grep -E "com\.sebastian\.tiktok" || echo "(no agents loaded)"
@@ -72,7 +106,7 @@ case "$cmd" in
     done
     ;;
   *)
-    echo "usage: $0 {install|uninstall|reload|status}" >&2
+    echo "usage: $0 {install|reload|uninstall|kickstart <label>|status}" >&2
     exit 2
     ;;
 esac
