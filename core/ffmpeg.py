@@ -1,21 +1,36 @@
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
-# ffmpeg-full is keg-only on Homebrew and ships with libass + many extra
-# codecs the regular brew ffmpeg doesn't include. Prefer it when installed.
-_FFMPEG_FULL_BIN = Path("/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg")
-_FFPROBE_FULL_BIN = Path("/opt/homebrew/opt/ffmpeg-full/bin/ffprobe")
+# Resolution order:
+#   1. FFMPEG_BIN / FFPROBE_BIN env override (systemd units, per-run testing).
+#   2. Homebrew keg-only ffmpeg-full (macOS dev machines).
+#   3. PATH lookup (Linux servers via apt-installed ffmpeg).
+_HOMEBREW_FFMPEG = Path("/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg")
+_HOMEBREW_FFPROBE = Path("/opt/homebrew/opt/ffmpeg-full/bin/ffprobe")
 
 
 def which_ffmpeg() -> str:
-    if _FFMPEG_FULL_BIN.exists():
-        return str(_FFMPEG_FULL_BIN)
-    return shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+    override = os.environ.get("FFMPEG_BIN")
+    if override:
+        return override
+    if _HOMEBREW_FFMPEG.exists():
+        return str(_HOMEBREW_FFMPEG)
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    raise RuntimeError("ffmpeg not found: set FFMPEG_BIN or install ffmpeg on PATH")
 
 
 def which_ffprobe() -> str:
-    if _FFPROBE_FULL_BIN.exists():
-        return str(_FFPROBE_FULL_BIN)
-    return shutil.which("ffprobe") or "/opt/homebrew/bin/ffprobe"
+    override = os.environ.get("FFPROBE_BIN")
+    if override:
+        return override
+    if _HOMEBREW_FFPROBE.exists():
+        return str(_HOMEBREW_FFPROBE)
+    found = shutil.which("ffprobe")
+    if found:
+        return found
+    raise RuntimeError("ffprobe not found: set FFPROBE_BIN or install ffmpeg on PATH")

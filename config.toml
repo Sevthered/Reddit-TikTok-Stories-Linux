@@ -22,7 +22,7 @@ rate   = "+8%"
 pause_between_sentences_ms = 120
 
 [whisper]
-backend    = "mlx"             # mlx | faster
+backend    = "faster"          # mlx (Apple Silicon only) | faster (CPU portable)
 model      = "small.en"
 word_level = true
 

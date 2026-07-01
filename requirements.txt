@@ -7,7 +7,10 @@ edge-tts==7.2.8
 yt-dlp==2026.6.9
 
 # Phase 4 (transcription)
-mlx-whisper==0.4.3
+#   mlx-whisper is Apple-Silicon-only (Metal). Optional on Linux; leave commented.
+#   faster-whisper is CPU-portable (Linux server, macOS CI, Windows).
+mlx-whisper==0.4.3 ; sys_platform == "darwin"
+faster-whisper==1.1.0
 
 # Phase 5 (assemble) — ffmpeg-full via brew, not pip.
 
@@ -33,4 +36,3 @@ tomlkit==0.15.0          # comment-preserving TOML round-trip for /api/config/to
 
 # Deferred — uncomment as later phases land:
 # kokoro==0.7.16           # Phase 2 (offline TTS fallback)
-# faster-whisper==1.0.3    # Phase 4 (CPU fallback)
