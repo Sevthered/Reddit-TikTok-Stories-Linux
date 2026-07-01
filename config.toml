@@ -1,7 +1,7 @@
 [reddit]
 mode         = "rss"          # json (unauth .json) | praw (OAuth) | rss (Atom feed, no score)
 subreddits   = ["tifu", "AmItheAsshole", "stories", "confession", "offmychest"]
-listing      = "top"          # top | hot | new
+listing      = "hot"          # top | hot | new
 time_filter  = "week"         # hour|day|week|month|year|all (top only)
 limit        = 25             # posts fetched per subreddit per run
 user_agent   = "AutomatedTikTokBot/1.0 (contact: sebgoncre@gmail.com)"
