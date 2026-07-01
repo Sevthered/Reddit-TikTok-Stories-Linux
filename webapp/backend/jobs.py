@@ -43,6 +43,73 @@ def _utc_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+# Best-effort mapping from a log-line fragment to the pipeline stage that
+# was running when the error hit. Scanned bottom-up against the tail so
+# the *last* recognised marker wins.
+_STAGE_MARKERS: list[tuple[str, str]] = [
+    ("pipeline.scrape",       "scrape"),
+    ("pipeline.filter",       "filter"),
+    ("pipeline.tts",          "tts"),
+    ("pipeline.background",   "background"),
+    ("pipeline.transcribe",   "transcribe"),
+    ("faster-whisper",        "transcribe"),
+    ("mlx-whisper",           "transcribe"),
+    ("pipeline.captions",     "captions"),
+    ("pipeline.card",         "card_overlay"),
+    ("pipeline.assemble",     "assemble"),
+    ("pipeline.cover",        "cover"),
+    ("pipeline.review_gate",  "review_gate"),
+    ("pipeline.upload",       "upload"),
+    ("pipeline.confirm_live", "confirm_live"),
+]
+
+
+def _detect_stage(lines: list[str]) -> str:
+    for line in reversed(lines):
+        for marker, stage in _STAGE_MARKERS:
+            if marker in line:
+                return stage
+    return "unknown"
+
+
+def _notify_job_failure(job: "Job") -> None:
+    """Send a Telegram DM summarising a failed pipeline job.
+
+    Message includes the job kind, exit code, detected pipeline stage, and
+    the last ~20 log lines from the ring buffer. Uses the same
+    TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID as the bot. Best-effort: any
+    error is swallowed by the caller.
+    """
+    import html
+    import urllib.parse
+    import urllib.request
+
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        log.warning("job failure notify skipped — TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set")
+        return
+
+    tail_lines = list(job.lines)[-20:]
+    stage = _detect_stage(list(job.lines))
+    tail_text = html.escape("\n".join(tail_lines)) or "(no output captured)"
+
+    header = (
+        f"❌ <b>{html.escape(job.kind)}</b> failed "
+        f"(exit={job.exit_code}, stage=<code>{stage}</code>, "
+        f"id=<code>{job.id}</code>)"
+    )
+    text = f"{header}\n\n<pre>{tail_text[-3500:]}</pre>"
+    data = urllib.parse.urlencode({
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": "true",
+    }).encode()
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    urllib.request.urlopen(url, data=data, timeout=10)  # noqa: S310 — trusted URL
+
+
 @dataclass
 class Job:
     id: str
@@ -135,6 +202,12 @@ class JobManager:
                     q.put_nowait(None)
                 except asyncio.QueueFull:
                     pass
+            # Fire Telegram DM on non-zero exit so failures aren't silent.
+            if job.exit_code not in (0, None):
+                try:
+                    _notify_job_failure(job)
+                except Exception:  # noqa: BLE001 — notifier must never mask job outcome
+                    log.exception("job %s failure notify raised", job.id)
             lock.release()
 
     def subscribe(self, job: Job) -> asyncio.Queue[str | None]:
