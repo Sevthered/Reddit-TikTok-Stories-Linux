@@ -1,5 +1,6 @@
 [Unit]
 Description=TikTok upload worker (picks next approved post)
+OnFailure=tiktok-notify@%n.service
 Requires=tiktok-xvfb.service
 After=tiktok-xvfb.service
 
@@ -17,4 +18,3 @@ Environment=PLAYWRIGHT_BROWSERS_PATH=/srv/tiktok/app/.playwright
 ExecStart=/srv/tiktok/app/.venv/bin/python -u pipeline/upload_worker.py
 StandardOutput=journal
 StandardError=journal
-OnFailure=tiktok-notify@%n.service

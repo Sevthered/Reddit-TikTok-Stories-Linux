@@ -1,5 +1,6 @@
 [Unit]
 Description=TikTok Telegram approval bot
+OnFailure=tiktok-notify@%n.service
 After=tiktok-webapp.service
 Wants=tiktok-webapp.service
 
@@ -16,7 +17,6 @@ Restart=on-failure
 RestartSec=30
 StandardOutput=journal
 StandardError=journal
-OnFailure=tiktok-notify@%n.service
 
 [Install]
 WantedBy=multi-user.target

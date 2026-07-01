@@ -1,5 +1,6 @@
 [Unit]
 Description=TikTok confirm-live scrape (moves posted_under_review -> posted)
+OnFailure=tiktok-notify@%n.service
 
 [Service]
 Type=oneshot
@@ -13,4 +14,3 @@ Environment=PLAYWRIGHT_BROWSERS_PATH=/srv/tiktok/app/.playwright
 ExecStart=/srv/tiktok/app/.venv/bin/python -u pipeline/confirm_live.py
 StandardOutput=journal
 StandardError=journal
-OnFailure=tiktok-notify@%n.service

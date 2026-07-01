@@ -1,5 +1,6 @@
 [Unit]
 Description=TikTok control-plane FastAPI + SPA
+OnFailure=tiktok-notify@%n.service
 After=network-online.target
 Wants=network-online.target
 
@@ -18,7 +19,6 @@ Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-OnFailure=tiktok-notify@%n.service
 
 [Install]
 WantedBy=multi-user.target
