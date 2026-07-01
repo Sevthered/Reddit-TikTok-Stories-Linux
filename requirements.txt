@@ -9,8 +9,22 @@ yt-dlp==2026.6.9
 # Phase 4 (transcription)
 mlx-whisper==0.4.3
 
+# Phase 5 (assemble) — ffmpeg-full via brew, not pip.
+
+# Phase 6 (card overlay + cover PNG)
+playwright==1.61.0
+spacy==3.8.13
+# spaCy transitively needs pydantic for its schemas module.
+pydantic==2.13.4
+# en_core_web_sm is not on PyPI — install via wheel URL:
+#   ./venv/bin/pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+
+# Phase 6 (TikTok upload) — hand-rolled via Playwright (see pipeline/upload.py).
+# Playwright + Chromium already declared above under Phase 6 card overlay.
+
+# Post-install (one-time):
+#   ./venv/bin/playwright install chromium
+
 # Deferred — uncomment as later phases land:
 # kokoro==0.7.16           # Phase 2 (offline TTS fallback)
 # faster-whisper==1.0.3    # Phase 4 (CPU fallback)
-# tiktok-uploader==1.0.13  # Phase 6/7 (upload)
-# webdriver-manager==4.0.2 # Phase 6/7 (chromedriver mgmt)

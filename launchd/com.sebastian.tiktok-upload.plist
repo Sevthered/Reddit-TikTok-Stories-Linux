@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sebastian.tiktok-upload</string>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/sebastian/Automated-TikTok-Upload</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/sebastian/Automated-TikTok-Upload/venv/bin/python</string>
+    <string>-u</string>
+    <string>pipeline/upload_worker.py</string>
+  </array>
+
+  <!-- 30-minute ticks inside the 19:00-01:30 Europe/Madrid posting window
+       (Q11 US-audience peak). launchd runs jobs in the system's local
+       time, which on this Mac follows Europe/Madrid. 13 slots/day. -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>23</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>23</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>1</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>1</integer><key>Minute</key><integer>30</integer></dict>
+  </array>
+
+  <!-- Interactive process type so Chromium can open a real window in
+       the logged-in Aqua session (Q19=b headful in own session). -->
+  <key>ProcessType</key>
+  <string>Interactive</string>
+  <key>SessionCreate</key>
+  <true/>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/opt/ffmpeg-full/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HOME</key>
+    <string>/Users/sebastian</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/sebastian/Automated-TikTok-Upload/data/logs/upload_worker.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/sebastian/Automated-TikTok-Upload/data/logs/upload_worker.stderr.log</string>
+
+  <!-- Do NOT set RunAtLoad — we only want the scheduled ticks. -->
+</dict>
+</plist>

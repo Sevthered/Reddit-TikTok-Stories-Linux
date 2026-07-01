@@ -9,13 +9,14 @@ from pathlib import Path
 from core.config import ConfigError, load_config
 from core.db import Db
 from core.logging_setup import setup_logging
+from core.notify import Notifier, NotifierError
 from pipeline.assemble import render
 from pipeline.background import ensure_cached, make_clip, pick_random_cached
 from pipeline.captions import build_ass
 from pipeline.clean import normalize
 from pipeline.cover import extract_cover, make_card
 from pipeline.filter import keep
-from pipeline.scrape import fetch_candidates
+from pipeline.scrape import Story, fetch_candidates
 from pipeline.transcribe import transcribe
 from pipeline.tts import TTSContentRefused, synthesize
 
@@ -24,7 +25,9 @@ log = logging.getLogger("main")
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Reddit-Story -> TikTok bot")
-    p.add_argument("--dry-run", action="store_true", help="skip upload step")
+    p.add_argument("--dry-run", action="store_true",
+                   help="render only; skip the Phase 6 review-gate + Telegram notify "
+                        "(row is marked rendered for dedup but not queued for upload)")
     p.add_argument("--approve", metavar="POST_ID", help="approve a reviewed video for upload (not implemented yet)")
     p.add_argument("--limit", type=int, help="override run.videos_per_run")
     p.add_argument("--mark-used", metavar="POST_ID",
@@ -35,6 +38,20 @@ def _parse_args() -> argparse.Namespace:
 def _preview(text: str, n: int = 200) -> str:
     s = " ".join(text.split())
     return s if len(s) <= n else s[:n].rstrip() + "..."
+
+
+def _build_caption(story: Story) -> str:
+    """Phase 6 caption template (Q12 + Q22): subreddit tag + title,
+    original author attribution, small hashtag set."""
+    author_tag = f"u/{story.author}" if story.author else "u/?"
+    sub = story.subreddit or ""
+    hashtags = " ".join(filter(None, ["#reddit", f"#{sub}" if sub else "",
+                                     "#storytime", "#fyp"]))
+    return (
+        f"r/{sub} — {story.title}\n\n"
+        f"Story by {author_tag}\n\n"
+        f"{hashtags}"
+    )
 
 
 def main() -> int:
@@ -124,7 +141,35 @@ def main() -> int:
             cover_path = extract_cover(final, Path("data/output") / f"{story.id}_cover.png")
             print(f"COVER : {cover_path}")
 
-            db.mark_used(story.id, title=story.title, platform="rendered")
+            caption = _build_caption(story)
+            if args.dry_run:
+                db.mark_used(story.id, title=story.title, platform="rendered")
+                print(f"DRY-RUN: skipped review-gate notify for {story.id}")
+            else:
+                db.mark_rendered(
+                    story.id,
+                    title=story.title,
+                    subreddit=story.subreddit,
+                    author=story.author,
+                    caption=caption,
+                    video_path=str(final),
+                    cover_path=str(cover_path),
+                )
+                try:
+                    notifier = Notifier.from_env()
+                    row = db.get_render(story.id)
+                    if row is None:
+                        raise RuntimeError(f"render row missing after mark_rendered({story.id})")
+                    msg_id = notifier.send_review_request(row)
+                    db.set_telegram_msg_id(story.id, msg_id)
+                    print(f"NOTIFY: telegram msg_id={msg_id}")
+                except NotifierError as e:
+                    log.warning("skip review-request for %s: %s", story.id, e)
+                    print(f"NOTIFY: skipped ({e})")
+                except Exception as e:
+                    log.exception("review-request crashed for %s", story.id)
+                    print(f"NOTIFY: error ({e})")
+
             picked += 1
             print(f"PICKED #{picked}: {story.id}")
 
