@@ -29,6 +29,7 @@ pydantic==2.13.4
 fastapi==0.139.0
 uvicorn[standard]==0.49.0
 python-multipart==0.0.32
+tomlkit==0.15.0          # comment-preserving TOML round-trip for /api/config/toml/section
 
 # Deferred — uncomment as later phases land:
 # kokoro==0.7.16           # Phase 2 (offline TTS fallback)

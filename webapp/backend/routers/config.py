@@ -17,6 +17,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+import tomlkit
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -93,6 +94,69 @@ def put_toml(payload: TomlIn) -> TomlOut:
                 tmp_path.unlink()
             except OSError:
                 pass
+    return TomlOut(path=str(path), content=path.read_text(encoding="utf-8"))
+
+
+# ---- Structured section patch (comment-preserving) ---------------------
+
+
+class SectionPatchIn(BaseModel):
+    section: str = Field(..., description="TOML table name, e.g. 'reddit'")
+    fields: dict[str, object] = Field(..., description="key → new value, patched in place")
+
+
+@router.put("/toml/section", response_model=TomlOut)
+def put_toml_section(payload: SectionPatchIn) -> TomlOut:
+    """Patch one `[section]` in config.toml while preserving comments,
+    key ordering, and whitespace. tomlkit rewrites only the touched keys
+    and re-emits the rest byte-for-byte, so hand-authored comments (the
+    `# json | praw | rss` legend etc.) stay intact.
+
+    Validation still goes through core.config.load_config against a
+    temp file before atomic os.replace, so a bad edit can't poison the
+    pipeline."""
+    path = settings.CONFIG_PATH
+    if not path.exists():
+        raise HTTPException(500, detail=f"{path} missing")
+
+    text = path.read_text(encoding="utf-8")
+    doc = tomlkit.parse(text)
+
+    section = payload.section
+    if section not in doc:
+        raise HTTPException(404, detail=f"section [{section}] not found")
+
+    table = doc[section]
+    for k, v in payload.fields.items():
+        # tomlkit.item() converts native Python → the correct TOML node
+        # kind (string/int/array/etc.) and preserves the surrounding
+        # trivia when we overwrite an existing key.
+        table[k] = v
+
+    new_content = tomlkit.dumps(doc)
+
+    tmp_fd, tmp_path_s = tempfile.mkstemp(
+        prefix=".config-", suffix=".toml.tmp", dir=str(path.parent),
+    )
+    tmp_path = Path(tmp_path_s)
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        try:
+            load_config(tmp_path)
+        except ConfigError as e:
+            raise HTTPException(422, detail=f"config invalid: {e}") from e
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(422, detail=f"toml parse error: {e}") from e
+        os.replace(tmp_path, path)
+        log.info("config.toml [%s] patched (%d fields)", section, len(payload.fields))
+    finally:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
     return TomlOut(path=str(path), content=path.read_text(encoding="utf-8"))
 
 

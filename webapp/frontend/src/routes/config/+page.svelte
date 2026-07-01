@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { parse, stringify } from 'smol-toml';
+	import { parse } from 'smol-toml';
 	import * as Card from '$lib/components/ui/card';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import * as Table from '$lib/components/ui/table';
@@ -47,15 +47,20 @@
 	async function saveSection(sectionKey: string) {
 		tomlBusy = true;
 		try {
-			const content = stringify(parsed);
-			const updated = await apiPut<TomlOut>('/api/config/toml', { content });
+			// Send only the section's key/value dict. Backend uses tomlkit
+			// to patch in place so hand-authored comments + column
+			// alignment survive the round-trip.
+			const fields = parsed[sectionKey] ?? {};
+			const updated = await apiPut<TomlOut>('/api/config/toml/section', {
+				section: sectionKey,
+				fields
+			});
 			toml = updated;
 			tomlRaw = updated.content;
 			parsed = parse(updated.content) as Record<string, Record<string, unknown>>;
 			toast.success(`[${sectionKey}] saved`);
 		} catch (err) {
 			toast.error('save failed', { description: (err as Error).message });
-			// re-load in case backend rejected the write
 			await loadToml();
 		} finally {
 			tomlBusy = false;
