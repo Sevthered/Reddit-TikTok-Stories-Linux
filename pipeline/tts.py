@@ -10,10 +10,18 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import edge_tts
+from edge_tts.exceptions import NoAudioReceived
 
 from core.config import Config
 
 log = logging.getLogger(__name__)
+
+
+class TTSContentRefused(Exception):
+    """Raised when edge-tts refuses to synthesize a sentence — every retry
+    returned `NoAudioReceived`. Signals a content-filter block (drugs,
+    self-harm, ...), not a transient network issue. Callers should skip the
+    story rather than retry."""
 
 
 @dataclass(frozen=True)
@@ -57,6 +65,11 @@ async def _synth_one(text: str, voice: str, rate: str, out_path: Path) -> None:
             log.warning("edge-tts attempt %d/%d failed (%s); backing off %.1fs",
                         attempt, _EDGE_RETRIES, e, delay)
             await asyncio.sleep(delay)
+    if isinstance(last_exc, NoAudioReceived):
+        raise TTSContentRefused(
+            f"edge-tts refused to synthesize (NoAudioReceived x{_EDGE_RETRIES}); "
+            f"likely content-filtered. sentence starts: {text[:80]!r}"
+        ) from last_exc
     raise RuntimeError(f"edge-tts failed after {_EDGE_RETRIES} tries") from last_exc
 
 

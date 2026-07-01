@@ -26,6 +26,7 @@ class Story:
     subreddit: str
     permalink: str
     word_count: int
+    author: str = ""
 
 
 _MAX_TRIES = 4
@@ -84,6 +85,7 @@ def _parse_story(child: dict) -> Story | None:
         subreddit=d.get("subreddit", ""),
         permalink=d.get("permalink", ""),
         word_count=wc,
+        author=d.get("author") or "",
     )
 
 
@@ -112,6 +114,11 @@ def _submission_to_story(s) -> Story | None:
     if not selftext.strip():
         return None
     wc = len(selftext.split())
+    author = ""
+    try:
+        author = s.author.name if s.author else ""
+    except Exception:
+        author = ""
     return Story(
         id=s.id,
         title=s.title or "",
@@ -122,6 +129,7 @@ def _submission_to_story(s) -> Story | None:
         subreddit=str(s.subreddit),
         permalink=s.permalink or "",
         word_count=wc,
+        author=author,
     )
 
 
@@ -202,6 +210,12 @@ def _parse_rss_entry(entry: ET.Element, subreddit: str) -> Story | None:
     link_el = entry.find(f"{_ATOM_NS}link")
     href = link_el.get("href", "") if link_el is not None else ""
     permalink = href.replace("https://www.reddit.com", "") if href else ""
+    author_el = entry.find(f"{_ATOM_NS}author/{_ATOM_NS}name")
+    author = (author_el.text or "").strip() if author_el is not None else ""
+    if author.startswith("/u/"):
+        author = author[3:]
+    elif author.startswith("u/"):
+        author = author[2:]
     return Story(
         id=post_id,
         title=title,
@@ -212,6 +226,7 @@ def _parse_rss_entry(entry: ET.Element, subreddit: str) -> Story | None:
         subreddit=subreddit,
         permalink=permalink,
         word_count=len(selftext.split()),
+        author=author,
     )
 
 

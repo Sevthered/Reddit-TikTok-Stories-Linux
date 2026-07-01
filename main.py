@@ -13,10 +13,11 @@ from pipeline.assemble import render
 from pipeline.background import ensure_cached, make_clip, pick_random_cached
 from pipeline.captions import build_ass
 from pipeline.clean import normalize
+from pipeline.cover import extract_cover, make_card
 from pipeline.filter import keep
 from pipeline.scrape import fetch_candidates
 from pipeline.transcribe import transcribe
-from pipeline.tts import synthesize
+from pipeline.tts import TTSContentRefused, synthesize
 
 log = logging.getLogger("main")
 
@@ -85,7 +86,12 @@ def main() -> int:
             log.info("clean: %d chars / %d words ready for tts",
                      len(spoken), len(spoken.split()))
 
-            audio = synthesize(spoken, cfg, work_dir)
+            try:
+                audio = synthesize(spoken, cfg, work_dir)
+            except TTSContentRefused as e:
+                log.warning("skip %s: edge-tts content-refused (%s)", story.id, e)
+                db.mark_used(story.id, title=story.title, platform="skipped:tts_refused")
+                continue
             print(f"AUDIO : {audio.path}  duration={audio.duration_s:.2f}s  too_long={audio.too_long}")
             if audio.too_long:
                 log.warning("skip %s: audio %.2fs exceeds target_max_seconds=%d",
@@ -107,9 +113,16 @@ def main() -> int:
                                  voice_duration_s=audio.duration_s)
             print(f"CAPS  : {len(words)} words -> {ass_path}")
 
+            card_path = make_card(story, work_dir / "card.png")
+            print(f"CARD  : {card_path}")
+
             final = render(clip.path, audio.path, ass_path, cfg,
-                           Path("data/output") / f"{story.id}.mp4")
+                           Path("data/output") / f"{story.id}.mp4",
+                           card_image=card_path)
             print(f"FINAL : {final}")
+
+            cover_path = extract_cover(final, Path("data/output") / f"{story.id}_cover.png")
+            print(f"COVER : {cover_path}")
 
             db.mark_used(story.id, title=story.title, platform="rendered")
             picked += 1
