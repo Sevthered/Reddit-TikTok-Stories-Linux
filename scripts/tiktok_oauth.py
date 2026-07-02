@@ -19,6 +19,8 @@ pipeline.tiktok_api.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import os
 import secrets
 import sys
@@ -45,24 +47,37 @@ def _env(name: str, required: bool = True) -> str:
     return v
 
 
-def build_auth_url(client_key: str, redirect_uri: str, scopes: list[str], state: str) -> str:
+def _pkce_pair() -> tuple[str, str]:
+    """(code_verifier, code_challenge) per RFC 7636, S256."""
+    verifier = secrets.token_urlsafe(64)[:96]
+    digest = hashlib.sha256(verifier.encode()).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+    return verifier, challenge
+
+
+def build_auth_url(client_key: str, redirect_uri: str, scopes: list[str], state: str,
+                   code_challenge: str) -> str:
     params = {
         "client_key": client_key,
         "scope": ",".join(scopes),
         "response_type": "code",
         "redirect_uri": redirect_uri,
         "state": state,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
     }
     return AUTH_URL + "?" + urllib.parse.urlencode(params)
 
 
-def exchange_code(client_key: str, client_secret: str, code: str, redirect_uri: str) -> dict:
+def exchange_code(client_key: str, client_secret: str, code: str, redirect_uri: str,
+                  code_verifier: str) -> dict:
     body = urllib.parse.urlencode({
         "client_key": client_key,
         "client_secret": client_secret,
         "code": code,
         "grant_type": "authorization_code",
         "redirect_uri": redirect_uri,
+        "code_verifier": code_verifier,
     }).encode()
     req = urllib.request.Request(
         TOKEN_URL,
@@ -83,7 +98,8 @@ def main() -> int:
     scopes = os.environ.get("TIKTOK_SCOPES", "video.list").split(",")
 
     state = secrets.token_urlsafe(16)
-    url = build_auth_url(client_key, redirect_uri, scopes, state)
+    code_verifier, code_challenge = _pkce_pair()
+    url = build_auth_url(client_key, redirect_uri, scopes, state, code_challenge)
 
     print("\n=== TikTok Login Kit OAuth ===")
     print(f"scopes: {scopes}")
@@ -104,7 +120,7 @@ def main() -> int:
         return 1
 
     print("\nexchanging code for tokens...")
-    resp = exchange_code(client_key, client_secret, code, redirect_uri)
+    resp = exchange_code(client_key, client_secret, code, redirect_uri, code_verifier)
     if "access_token" not in resp:
         print("token exchange failed:")
         import json
