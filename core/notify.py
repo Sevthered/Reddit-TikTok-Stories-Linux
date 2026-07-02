@@ -782,6 +782,33 @@ def _handle_message(notifier: Notifier, db, msg: dict[str, Any]) -> None:
         )
 
 
+_BOT_COMMANDS: list[tuple[str, str]] = [
+    ("menu", "Main menu"),
+    ("render", "Render slot controls"),
+    ("upload", "Upload approved picker"),
+    ("confirm", "Confirm-live controls"),
+    ("status", "Pipeline status"),
+    ("queue", "Pending + review queue"),
+    ("webapp", "Start/stop webapp"),
+    ("pause", "Pause uploads"),
+    ("resume", "Resume uploads"),
+]
+
+
+def _register_bot_commands(notifier: Notifier) -> None:
+    """Publish the slash-command list to Telegram so clients autocomplete `/`.
+
+    Idempotent: `setMyCommands` overwrites the default scope. Failures are
+    logged but non-fatal — the bot still works, users just lose autocomplete.
+    """
+    payload = {"commands": [{"command": c, "description": d} for c, d in _BOT_COMMANDS]}
+    try:
+        notifier._post("setMyCommands", payload)
+        log.info("telegram bot: registered %d commands", len(_BOT_COMMANDS))
+    except Exception as e:
+        log.warning("telegram bot: setMyCommands failed: %s", e)
+
+
 def run_callback_bot(db, *, notifier: Notifier | None = None,
                      stop_after_s: float | None = None) -> None:
     """Long-poll `getUpdates` and dispatch to _handle_callback / _handle_message.
@@ -792,6 +819,8 @@ def run_callback_bot(db, *, notifier: Notifier | None = None,
     forever."""
     notifier = notifier or Notifier.from_env()
     start = time.monotonic()
+
+    _register_bot_commands(notifier)
 
     offset_raw = db.get_config(_CFG_TG_OFFSET, "0") or "0"
     try:
