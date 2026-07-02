@@ -1,6 +1,5 @@
 [Unit]
 Description=Upload trigger for the 18:00 slot
-Requires=tiktok-slot-upload@1800.service
 
 [Timer]
 OnCalendar=*-*-* 18:00:00 Europe/Madrid

@@ -1,6 +1,5 @@
 [Unit]
 Description=Render trigger for the 06:00 slot (fires 05:30 Europe/Madrid)
-Requires=tiktok-slot-render@0600.service
 
 [Timer]
 OnCalendar=*-*-* 05:30:00 Europe/Madrid
