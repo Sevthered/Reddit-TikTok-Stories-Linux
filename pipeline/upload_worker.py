@@ -50,7 +50,7 @@ log = logging.getLogger("upload_worker")
 # Policy constants (mirror phase-6-posting-policy + phase-6-ops ADRs).
 _POST_TZ = ZoneInfo("Europe/Madrid")
 _POST_WINDOW_HOURS = {19, 20, 21, 22, 23, 0, 1}   # Q11
-_MAX_POSTS_PER_DAY = 2                             # Q9
+_MAX_POSTS_PER_DAY = 4                             # 4-slot schedule (00/06/12/18)
 _MIN_SPACING_HOURS = 2                             # Q9
 
 _PAUSE_FLAG = Path("data/PAUSE_UPLOADS")

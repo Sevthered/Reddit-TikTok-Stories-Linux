@@ -1,0 +1,20 @@
+[Unit]
+Description=Upload for slot %i (fires at exact publish hour)
+OnFailure=tiktok-notify@%n.service
+Requires=tiktok-xvfb.service
+After=tiktok-xvfb.service
+
+[Service]
+Type=oneshot
+User=christian
+Group=christian
+WorkingDirectory=/srv/tiktok/app
+EnvironmentFile=/srv/tiktok/app/.env
+Environment=DISPLAY=:99
+Environment=TZ=Europe/Madrid
+Environment=PYTHONUNBUFFERED=1
+Environment=PLAYWRIGHT_BROWSERS_PATH=/srv/tiktok/app/.playwright
+TimeoutStartSec=15min
+ExecStart=/srv/tiktok/app/.venv/bin/python -u scripts/slot.py upload --instance %i
+StandardOutput=journal
+StandardError=journal

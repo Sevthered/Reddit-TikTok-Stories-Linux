@@ -20,7 +20,16 @@ SYSTEMD_DIR="/etc/systemd/system"
 POLKIT_DIR="/etc/polkit-1/rules.d"
 
 PERSISTENT=(tiktok-xvfb tiktok-webapp tiktok-bot)
-TIMERS=(tiktok-upload.timer tiktok-confirm.timer tiktok-retention.timer)
+# tiktok-upload.timer intentionally omitted — replaced by the four
+# tiktok-slot-{render,upload}@HHMM.timer pairs below.
+TIMERS=(
+  tiktok-confirm.timer
+  tiktok-retention.timer
+  tiktok-slot-render@0000.timer  tiktok-slot-upload@0000.timer
+  tiktok-slot-render@0600.timer  tiktok-slot-upload@0600.timer
+  tiktok-slot-render@1200.timer  tiktok-slot-upload@1200.timer
+  tiktok-slot-render@1800.timer  tiktok-slot-upload@1800.timer
+)
 
 need_root() {
   if [[ $EUID -ne 0 ]]; then

@@ -12,7 +12,8 @@ polkit.addRule(function(action, subject) {
             unit === "tiktok-retention.service" ||
             unit === "tiktok-upload.timer"      ||
             unit === "tiktok-confirm.timer"     ||
-            unit === "tiktok-retention.timer") {
+            unit === "tiktok-retention.timer"   ||
+            /^tiktok-slot-(render|upload)@\d{4}\.(service|timer)$/.test(unit)) {
             return polkit.Result.YES;
         }
     }

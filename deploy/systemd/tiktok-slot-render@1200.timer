@@ -1,0 +1,11 @@
+[Unit]
+Description=Render trigger for the 12:00 slot (fires 11:30 Europe/Madrid)
+Requires=tiktok-slot-render@1200.service
+
+[Timer]
+OnCalendar=*-*-* 11:30:00 Europe/Madrid
+Persistent=true
+Unit=tiktok-slot-render@1200.service
+
+[Install]
+WantedBy=timers.target
