@@ -33,7 +33,6 @@ import os
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -44,22 +43,21 @@ from core.config import _load_dotenv  # noqa: E402
 from core.db import Db, UPLOAD_APPROVED, UPLOAD_PENDING, UPLOAD_REJECTED  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
 from core.notify import Notifier, NotifierError, _html_escape  # noqa: E402
+from core.schedule import (  # noqa: E402
+    DEFAULT_SLOTS,
+    EffectiveSlotCfg,
+    effective_slot_cfg,
+    known_instances,
+)
 
 
 log = logging.getLogger("slot")
 
 
-@dataclass(frozen=True)
-class SlotCfg:
-    publish_hour: int      # 0..23
-    auto_approve: bool     # True → skip Telegram review card
-    warn_pre_render: bool  # True → DM "rendering for HH:00 slot" as we start
-
-
-SLOTS: dict[str, SlotCfg] = {
-    "0000": SlotCfg(publish_hour=0,  auto_approve=True,  warn_pre_render=False),
-    "1200": SlotCfg(publish_hour=12, auto_approve=False, warn_pre_render=True),
-}
+# Historical hardcoded shape — kept as a thin re-export so any external
+# tooling that imported `SLOTS` still resolves. New code should use
+# `core.schedule.DEFAULT_SLOTS` / `effective_slot_cfg`.
+SLOTS = DEFAULT_SLOTS
 
 
 _MANIFEST_DIR = Path("data/slots")
@@ -128,11 +126,20 @@ def _run_pipeline() -> int:
     return subprocess.run(cmd, check=False).returncode
 
 
+def _load_cfg(instance: str) -> EffectiveSlotCfg:
+    with Db.open() as db:
+        return effective_slot_cfg(instance, db)
+
+
 def _cmd_render(instance: str) -> int:
-    cfg = SLOTS[instance]
+    cfg = _load_cfg(instance)
     notifier = _notifier()
 
-    if cfg.warn_pre_render:
+    if not cfg.render_enabled:
+        log.info("slot %s render skipped: render.enabled=false in DB config", instance)
+        return 0
+
+    if cfg.notify_render_pre:
         _send(
             notifier,
             f"🎬 <b>Rendering for {cfg.publish_hour:02d}:00 slot</b>\n"
@@ -155,25 +162,30 @@ def _cmd_render(instance: str) -> int:
             time.sleep(_RENDER_RETRY_SLEEP_S)
 
     if exit_code != 0:
-        _send(
-            notifier,
-            f"❌ <b>Render failed for {cfg.publish_hour:02d}:00 slot</b>\n"
-            f"main.py exit={exit_code} after {_RENDER_MAX_ATTEMPTS} attempts.\n"
-            f"Slot will be skipped.",
-        )
+        if cfg.notify_render_crash:
+            _send(
+                notifier,
+                f"❌ <b>Render failed for {cfg.publish_hour:02d}:00 slot</b>\n"
+                f"main.py exit={exit_code} after {_RENDER_MAX_ATTEMPTS} attempts.\n"
+                f"Slot will be skipped.",
+            )
         return exit_code
 
     with Db.open() as db:
         post_id = _latest_pending_post_id(db)
         if post_id is None or post_id == last_pending_before:
-            # Scrape-empty (no candidates, or all filtered by length/dedup) is
-            # a normal miss, not a render failure — do NOT DM the operator.
-            # The upload slot will separately DM when it finds no manifest.
             log.warning(
                 "slot %s: no fresh pending row (scrape-empty or all filtered); "
-                "slot will be skipped silently",
+                "slot will be skipped %s",
                 instance,
+                "with DM" if cfg.notify_render_empty else "silently",
             )
+            if cfg.notify_render_empty:
+                _send(
+                    notifier,
+                    f"⚠️ <b>{cfg.publish_hour:02d}:00 slot — nothing to render</b>\n"
+                    "Scrape empty or all candidates filtered. Slot skipped.",
+                )
             return 2
 
         _write_manifest(instance, {
@@ -192,14 +204,15 @@ def _cmd_render(instance: str) -> int:
 
 
 def _cmd_upload(instance: str) -> int:
-    cfg = SLOTS[instance]
+    cfg = _load_cfg(instance)
     notifier = _notifier()
+
+    if not cfg.upload_enabled:
+        log.info("slot %s upload skipped: upload.enabled=false in DB config", instance)
+        return 0
 
     manifest = _read_manifest(instance)
     if manifest is None:
-        # No manifest usually means scrape-empty (render side already stayed
-        # silent). Real render crashes DM `❌ Render failed` at render time,
-        # so the operator already knows — no need to double-notify here.
         log.warning(
             "slot %s upload: no manifest at data/slots/%s.json; skipping silently",
             instance, instance,
@@ -211,11 +224,12 @@ def _cmd_upload(instance: str) -> int:
     with Db.open() as db:
         row = db.get_render(post_id)
         if row is None:
-            _send(
-                notifier,
-                f"⚠️ <b>{cfg.publish_hour:02d}:00 slot aborted</b>\n"
-                f"post_id={post_id} missing from DB.",
-            )
+            if cfg.notify_upload_failure:
+                _send(
+                    notifier,
+                    f"⚠️ <b>{cfg.publish_hour:02d}:00 slot aborted</b>\n"
+                    f"post_id={post_id} missing from DB.",
+                )
             _clear_manifest(instance)
             return 1
 
@@ -223,35 +237,42 @@ def _cmd_upload(instance: str) -> int:
         log.info("slot %s upload: post_id=%s status=%s", instance, post_id, status)
 
         if status == UPLOAD_REJECTED:
-            _send(
-                notifier,
-                f"⏭️ <b>{cfg.publish_hour:02d}:00 slot skipped</b>\n"
-                f"{post_id} was rejected during the approval window.",
-            )
+            if cfg.notify_upload_approval_card:
+                _send(
+                    notifier,
+                    f"⏭️ <b>{cfg.publish_hour:02d}:00 slot skipped</b>\n"
+                    f"{post_id} was rejected during the approval window.",
+                )
             _clear_manifest(instance)
             return 0
 
         if status == UPLOAD_PENDING:
             log.info("no approval received; force-approving %s", post_id)
-            _send(
-                notifier,
-                f"⏰ <b>Publishing {cfg.publish_hour:02d}:00 slot without approval</b>\n"
-                f"No reply received. Force-approving {post_id} and uploading now.",
-            )
+            if cfg.notify_upload_force_approve:
+                _send(
+                    notifier,
+                    f"⏰ <b>Publishing {cfg.publish_hour:02d}:00 slot without approval</b>\n"
+                    f"No reply received. Force-approving {post_id} and uploading now.",
+                )
             db.approve(post_id)
         elif status != UPLOAD_APPROVED:
-            _send(
-                notifier,
-                f"⚠️ <b>{cfg.publish_hour:02d}:00 slot aborted</b>\n"
-                f"{post_id} is in status={status!r}; expected approved / pending / rejected.",
-            )
+            if cfg.notify_upload_failure:
+                _send(
+                    notifier,
+                    f"⚠️ <b>{cfg.publish_hour:02d}:00 slot aborted</b>\n"
+                    f"{post_id} is in status={status!r}; expected approved / pending / rejected.",
+                )
             _clear_manifest(instance)
             return 1
 
-    cmd = [sys.executable, "-u", "pipeline/upload_worker.py", "--post-id", post_id]
+    cmd = [
+        sys.executable, "-u", "pipeline/upload_worker.py",
+        "--post-id", post_id,
+        "--instance", instance,
+    ]
     log.info("running %s", cmd)
     rc = subprocess.run(cmd, check=False).returncode
-    if rc != 0:
+    if rc != 0 and cfg.notify_upload_failure:
         _send(
             notifier,
             f"❌ <b>{cfg.publish_hour:02d}:00 slot upload FAILED</b>\n"
@@ -269,10 +290,10 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="action", required=True)
 
     p_r = sub.add_parser("render", help="render for a slot; auto-approve for auto slots.")
-    p_r.add_argument("--instance", required=True, choices=sorted(SLOTS))
+    p_r.add_argument("--instance", required=True, choices=sorted(DEFAULT_SLOTS))
 
     p_u = sub.add_parser("upload", help="upload a slot's rendered post at publish time.")
-    p_u.add_argument("--instance", required=True, choices=sorted(SLOTS))
+    p_u.add_argument("--instance", required=True, choices=sorted(DEFAULT_SLOTS))
 
     args = p.parse_args(argv)
     if args.action == "render":

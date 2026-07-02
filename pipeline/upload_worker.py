@@ -37,6 +37,7 @@ from core.config import _load_dotenv
 from core.db import Db, RenderRow
 from core.logging_setup import setup_logging
 from core.notify import Notifier, NotifierError, _html_escape
+from core.schedule import EffectiveSlotCfg, effective_slot_cfg
 from pipeline.upload import (
     TikTokAuthError,
     TikTokDOMError,
@@ -119,8 +120,11 @@ def _maybe_alert_session_expiry(notifier: Notifier | None, db: Db) -> None:
 # ---- Telegram notifications -----------------------------------------------
 
 def _notify_success(notifier: Notifier | None, row: RenderRow,
-                    result: UploadResult) -> None:
+                    result: UploadResult,
+                    cfg: EffectiveSlotCfg | None) -> None:
     if notifier is None:
+        return
+    if cfg is not None and not cfg.notify_upload_success:
         return
     text = (
         f"🚀 <b>Posted</b> — {row.post_id}\n"
@@ -137,8 +141,11 @@ def _notify_success(notifier: Notifier | None, row: RenderRow,
 
 
 def _notify_failure(notifier: Notifier | None, row: RenderRow, err: Exception,
-                    attempts: int, terminal: bool) -> None:
+                    attempts: int, terminal: bool,
+                    cfg: EffectiveSlotCfg | None) -> None:
     if notifier is None:
+        return
+    if cfg is not None and not cfg.notify_upload_failure:
         return
     header = ("❌ <b>Upload failed (terminal)</b>"
               if terminal else f"⚠️ <b>Upload failed ({attempts}/3)</b>")
@@ -157,11 +164,29 @@ def _notify_failure(notifier: Notifier | None, row: RenderRow, err: Exception,
         log.warning("failure notify failed: %s", e)
 
 
+def _notify_gate_reject(notifier: Notifier | None, cfg: EffectiveSlotCfg | None,
+                        reason: str) -> None:
+    """Opt-in DM when the upload gate rejects. Off by default so today's
+    log-only behavior stays intact; per-slot `notify_upload_gate_reject`
+    turns it on."""
+    if notifier is None or cfg is None or not cfg.notify_upload_gate_reject:
+        return
+    try:
+        notifier.send_text(
+            f"⛔ <b>Upload gate rejected slot {cfg.instance}</b>\n"
+            f"<pre>{_html_escape(reason)[:400]}</pre>",
+            parse_mode="HTML",
+        )
+    except NotifierError as e:
+        log.warning("gate-reject notify failed: %s", e)
+
+
 # ---- Core run --------------------------------------------------------------
 
 def run_once(*, force: bool = False, dry_run: bool = False,
              visibility: str = "public", aigc: bool = True,
-             post_id: str | None = None) -> int:
+             post_id: str | None = None,
+             instance: str | None = None) -> int:
     _load_dotenv()
     setup_logging()
 
@@ -180,9 +205,25 @@ def run_once(*, force: bool = False, dry_run: bool = False,
     with Db.open() as db:
         _maybe_alert_session_expiry(notifier, db)
 
+        # Slot-scoped effective config gates the notify.upload.* toggles.
+        # When --instance is not supplied (e.g. manual invocation), cfg
+        # stays None and every notifier call keeps its today-behavior.
+        cfg: EffectiveSlotCfg | None = None
+        if instance is not None:
+            try:
+                cfg = effective_slot_cfg(instance, db)
+            except KeyError:
+                log.warning("unknown slot instance %r — ignoring, using global defaults",
+                            instance)
+
+        if cfg is not None and not cfg.upload_enabled and not force:
+            log.info("slot %s upload disabled in DB config — nothing to do", instance)
+            return 0
+
         allow, reason = _gates_pass(db, now_madrid)
         if not allow and not force:
             log.info("gates closed: %s — nothing to do", reason)
+            _notify_gate_reject(notifier, cfg, reason)
             return 0
 
         if post_id is not None:
@@ -218,20 +259,20 @@ def run_once(*, force: bool = False, dry_run: bool = False,
             elapsed = time.time() - started
             log.exception("upload failed after %.1fs: %s", elapsed, e)
             attempts, terminal = db.mark_upload_failure(row.post_id, str(e))
-            _notify_failure(notifier, row, e, attempts, terminal)
+            _notify_failure(notifier, row, e, attempts, terminal, cfg)
             return 1
         except Exception as e:
             elapsed = time.time() - started
             log.exception("unexpected error after %.1fs", elapsed)
             attempts, terminal = db.mark_upload_failure(row.post_id, f"unexpected: {e}")
-            _notify_failure(notifier, row, e, attempts, terminal)
+            _notify_failure(notifier, row, e, attempts, terminal, cfg)
             return 1
 
         elapsed = time.time() - started
         log.info("uploaded %s in %.1fs — tiktok_url=%s",
                  row.post_id, elapsed, result.tiktok_url)
         db.mark_upload_success(row.post_id)
-        _notify_success(notifier, row, result)
+        _notify_success(notifier, row, result, cfg)
         return 0
 
 
@@ -259,10 +300,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--post-id", default=None,
                    help="claim this specific approved row instead of the "
                         "oldest one (used by the Telegram picker).")
+    p.add_argument("--instance", default=None,
+                   help="slot instance name (e.g. '0000', '1200'). When "
+                        "supplied, the worker reads per-slot notify.upload.* "
+                        "toggles + upload.enabled from the DB config. Omit "
+                        "for manual invocations that should use global "
+                        "notifier defaults.")
     args = p.parse_args(argv)
     return run_once(force=args.force, dry_run=args.dry_run,
                     visibility=args.visibility, aigc=args.aigc,
-                    post_id=args.post_id)
+                    post_id=args.post_id, instance=args.instance)
 
 
 if __name__ == "__main__":
