@@ -509,6 +509,43 @@ def _wait_for_post_confirmation(page: Page, timeout_s: float = 180.0) -> str | N
     raise TikTokDOMError("post confirmation not observed within timeout")
 
 
+def _crosscheck_post_via_display_api(publish_click_ts: float,
+                                     slack_s: int = 60) -> str | None:
+    """Fallback verifier for _wait_for_post_confirmation timeouts.
+
+    Studio occasionally accepts the publish but neither redirects nor
+    surfaces a toast, so the DOM detector times out on a video that
+    actually went live. Query the Display API for the newest video
+    on the authenticated account; if its `create_time` is at/after
+    the publish click (minus `slack_s` for clock skew + API latency),
+    treat that as evidence of success and return its share_url.
+    Returns None on no-match or API failure — caller re-raises."""
+    try:
+        from pipeline.tiktok_api import video_list
+    except Exception as e:
+        log.warning("display-api import failed during cross-check: %s", e)
+        return None
+    try:
+        vids, _, _ = video_list(max_count=3)
+    except Exception as e:
+        log.warning("display-api cross-check failed: %s", e)
+        return None
+    if not vids:
+        log.info("display-api cross-check: no videos returned")
+        return None
+    newest = vids[0]
+    threshold = int(publish_click_ts) - slack_s
+    if newest.create_time >= threshold:
+        log.warning("display-api cross-check: newest video id=%s create_time=%d "
+                    ">= threshold=%d — treating as posted", newest.id,
+                    newest.create_time, threshold)
+        return newest.share_url or None
+    log.info("display-api cross-check: newest video id=%s create_time=%d < "
+             "threshold=%d — no fresh post detected", newest.id,
+             newest.create_time, threshold)
+    return None
+
+
 # -------- Public entrypoint --------
 
 def upload_to_tiktok(
@@ -610,8 +647,17 @@ def upload_to_tiktok(
 
             # ---- Post ----
             _click_post(page)
+            publish_click_ts = time.time()
 
-            tiktok_url = _wait_for_post_confirmation(page)
+            try:
+                tiktok_url = _wait_for_post_confirmation(page)
+            except TikTokDOMError as detector_err:
+                fallback_url = _crosscheck_post_via_display_api(publish_click_ts)
+                if fallback_url is None:
+                    raise
+                log.warning("detector missed post but Display API confirms: %s "
+                            "(detector said: %s)", fallback_url, detector_err)
+                tiktok_url = fallback_url
             return UploadResult(post_id=post_id, tiktok_url=tiktok_url, visibility=visibility)
 
         finally:
