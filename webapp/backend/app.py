@@ -31,6 +31,7 @@ from webapp.backend.routers import (
     jobs,
     logs,
     renders,
+    schedule,
     status,
 )
 
@@ -119,6 +120,7 @@ app.include_router(artifacts.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
 app.include_router(cookie.router, prefix="/api")
 app.include_router(logs.router, prefix="/api")
+app.include_router(schedule.router, prefix="/api")
 
 
 # ---- Serve SvelteKit SPA (Phase 9) ---------------------------------------
