@@ -130,10 +130,11 @@ class Db:
         # requests. Safe for existing sync callers because they always use
         # one connection per context and never share it across threads.
         conn = sqlite3.connect(p, isolation_level=None, check_same_thread=False)
-        # Coexist with the always-on Telegram bot writer: wait up to 5 s
+        # Coexist with the always-on Telegram bot writer: wait up to 20 s
         # for the write lock before raising SQLITE_BUSY (WAL allows one
-        # writer at a time across processes).
-        conn.execute("PRAGMA busy_timeout=5000")
+        # writer at a time across processes). 20s covers Playwright/API/timer
+        # write overlap per research run 4/5/6.
+        conn.execute("PRAGMA busy_timeout=20000")
         try:
             conn.executescript(_SCHEMA)
             for col_name, col_def in _PHASE6_COLUMNS:
