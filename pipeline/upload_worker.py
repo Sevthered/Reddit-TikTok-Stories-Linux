@@ -51,7 +51,7 @@ log = logging.getLogger("upload_worker")
 
 # Policy constants (mirror phase-6-posting-policy + phase-6-ops ADRs).
 _POST_TZ = ZoneInfo("Europe/Madrid")
-_POST_WINDOW_HOURS = {19, 20, 21, 22, 23, 0, 1}   # Q11
+_POST_WINDOW_HOURS = {0, 12}                       # slot cadence (00/12 CEST)
 _MAX_POSTS_PER_DAY = 2                             # 2-slot schedule (00/12)
 _MIN_SPACING_HOURS = 2                             # Q9
 
@@ -70,7 +70,7 @@ def _gates_pass(db: Db, now_madrid: datetime) -> tuple[bool, str]:
     if not db.is_uploads_enabled():
         return False, "uploads_enabled=0 in config (Telegram /pause)"
     if now_madrid.hour not in _POST_WINDOW_HOURS:
-        return False, f"outside 19:00-01:59 CET window (hour={now_madrid.hour})"
+        return False, f"outside slot window {{00,12}} CEST (hour={now_madrid.hour})"
     posts = db.posts_today(_madrid_offset_hours(now_madrid))
     if posts >= _MAX_POSTS_PER_DAY:
         return False, f"cadence cap: {posts}/{_MAX_POSTS_PER_DAY} posts today"
