@@ -166,11 +166,13 @@ def _cmd_render(instance: str) -> int:
     with Db.open() as db:
         post_id = _latest_pending_post_id(db)
         if post_id is None or post_id == last_pending_before:
-            _send(
-                notifier,
-                f"⚠️ <b>Render produced no new row for {cfg.publish_hour:02d}:00 slot</b>\n"
-                f"(main.py exit 0 but no fresh pending post_id found — likely all "
-                f"candidates got filtered / skipped). Slot will be skipped.",
+            # Scrape-empty (no candidates, or all filtered by length/dedup) is
+            # a normal miss, not a render failure — do NOT DM the operator.
+            # The upload slot will separately DM when it finds no manifest.
+            log.warning(
+                "slot %s: no fresh pending row (scrape-empty or all filtered); "
+                "slot will be skipped silently",
+                instance,
             )
             return 2
 
@@ -195,11 +197,12 @@ def _cmd_upload(instance: str) -> int:
 
     manifest = _read_manifest(instance)
     if manifest is None:
-        _send(
-            notifier,
-            f"⏭️ <b>{cfg.publish_hour:02d}:00 slot skipped</b>\n"
-            f"No manifest at data/slots/{instance}.json — render likely failed "
-            f"earlier. Check journal.",
+        # No manifest usually means scrape-empty (render side already stayed
+        # silent). Real render crashes DM `❌ Render failed` at render time,
+        # so the operator already knows — no need to double-notify here.
+        log.warning(
+            "slot %s upload: no manifest at data/slots/%s.json; skipping silently",
+            instance, instance,
         )
         return 0
 
