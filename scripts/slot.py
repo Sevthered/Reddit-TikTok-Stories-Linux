@@ -44,7 +44,6 @@ from core.db import Db, UPLOAD_APPROVED, UPLOAD_PENDING, UPLOAD_REJECTED  # noqa
 from core.logging_setup import setup_logging  # noqa: E402
 from core.notify import Notifier, NotifierError, _html_escape  # noqa: E402
 from core.schedule import (  # noqa: E402
-    DEFAULT_SLOTS,
     EffectiveSlotCfg,
     effective_slot_cfg,
     known_instances,
@@ -52,12 +51,6 @@ from core.schedule import (  # noqa: E402
 
 
 log = logging.getLogger("slot")
-
-
-# Historical hardcoded shape — kept as a thin re-export so any external
-# tooling that imported `SLOTS` still resolves. New code should use
-# `core.schedule.DEFAULT_SLOTS` / `effective_slot_cfg`.
-SLOTS = DEFAULT_SLOTS
 
 
 _MANIFEST_DIR = Path("data/slots")
@@ -290,10 +283,16 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="action", required=True)
 
     p_r = sub.add_parser("render", help="render for a slot; auto-approve for auto slots.")
-    p_r.add_argument("--instance", required=True, choices=sorted(DEFAULT_SLOTS))
+    p_r.add_argument("--instance", required=True,
+                     help="Slot instance name (4 digits, e.g. 0000, 1200). "
+                          "Validated against the `slots` DB table at "
+                          "runtime.")
 
     p_u = sub.add_parser("upload", help="upload a slot's rendered post at publish time.")
-    p_u.add_argument("--instance", required=True, choices=sorted(DEFAULT_SLOTS))
+    p_u.add_argument("--instance", required=True,
+                     help="Slot instance name (4 digits, e.g. 0000, 1200). "
+                          "Validated against the `slots` DB table at "
+                          "runtime.")
 
     args = p.parse_args(argv)
     if args.action == "render":
