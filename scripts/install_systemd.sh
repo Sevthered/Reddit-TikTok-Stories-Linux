@@ -19,7 +19,9 @@ POLKIT_SRC="$REPO_ROOT/deploy/polkit"
 SYSTEMD_DIR="/etc/systemd/system"
 POLKIT_DIR="/etc/polkit-1/rules.d"
 
-PERSISTENT=(tiktok-xvfb tiktok-webapp tiktok-bot)
+# tiktok-webapp deliberately omitted — kept installed but not enabled by
+# default. Start on demand with `make web-up` (see Makefile).
+PERSISTENT=(tiktok-xvfb tiktok-bot)
 # tiktok-upload.timer intentionally omitted — replaced by the four
 # tiktok-slot-{render,upload}@HHMM.timer pairs below.
 TIMERS=(

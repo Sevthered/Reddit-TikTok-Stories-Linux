@@ -18,12 +18,17 @@ PIP        := $(REPO)/.venv/bin/pip
 FRONT      := $(REPO)/webapp/frontend
 INSTALL_SH := $(REPO)/scripts/install_systemd.sh
 
-PERSISTENT := tiktok-xvfb tiktok-webapp tiktok-bot
-TIMERS     := tiktok-upload.timer tiktok-confirm.timer tiktok-retention.timer
-ALL_UNITS  := $(addsuffix .service,$(PERSISTENT)) $(TIMERS)
+PERSISTENT := tiktok-xvfb tiktok-bot
+TIMERS     := tiktok-confirm.timer tiktok-retention.timer \
+              tiktok-slot-render@0000.timer tiktok-slot-upload@0000.timer \
+              tiktok-slot-render@0600.timer tiktok-slot-upload@0600.timer \
+              tiktok-slot-render@1200.timer tiktok-slot-upload@1200.timer \
+              tiktok-slot-render@1800.timer tiktok-slot-upload@1800.timer
+ALL_UNITS  := $(addsuffix .service,$(PERSISTENT)) tiktok-webapp.service $(TIMERS)
 
 .DEFAULT_GOAL := help
 .PHONY: help install uninstall up down reload status build-spa \
+        web-up web-down web-status \
         dev dev-webapp dev-bot dev-frontend \
         kickstart-webapp kickstart-bot kickstart-upload kickstart-confirm \
         logs logs-webapp logs-bot logs-upload logs-confirm logs-xvfb \
@@ -37,11 +42,16 @@ help:
 	@echo "    sudo make uninstall   disable + remove units + polkit"
 	@echo ""
 	@echo "  Runtime (no sudo — polkit rule covers christian):"
-	@echo "    make up               start webapp+bot+xvfb"
-	@echo "    make down             stop webapp+bot+xvfb"
-	@echo "    make reload           restart webapp+bot"
+	@echo "    make up               start bot+xvfb (webapp is off-by-default)"
+	@echo "    make down             stop bot+xvfb"
+	@echo "    make reload           restart bot"
 	@echo "    make status           unit + timer state"
 	@echo "    make kickstart-<svc>  restart one (webapp|bot|upload|confirm)"
+	@echo ""
+	@echo "  Webapp (off-by-default; run on demand while SSH'd in):"
+	@echo "    make web-up           start tiktok-webapp on 0.0.0.0:8765"
+	@echo "    make web-down         stop tiktok-webapp"
+	@echo "    make web-status       show current state + listening port"
 	@echo ""
 	@echo "  Development (foreground, Ctrl-C to stop):"
 	@echo "    make dev              webapp + bot + SPA dev together"
@@ -75,8 +85,22 @@ down:
 	@echo "→ stopped: $(PERSISTENT)"
 
 reload:
-	@systemctl restart tiktok-webapp.service tiktok-bot.service
-	@echo "→ restarted: webapp + bot"
+	@systemctl restart tiktok-bot.service
+	@echo "→ restarted: bot"
+
+# --- webapp (off-by-default; polkit-authorized, no sudo needed) ---
+web-up:
+	@systemctl start tiktok-webapp.service
+	@echo "→ webapp up on 0.0.0.0:8765 — http://$$(hostname -I | awk '{print $$1}'):8765"
+
+web-down:
+	@systemctl stop tiktok-webapp.service
+	@echo "→ webapp down"
+
+web-status:
+	@systemctl --no-pager status tiktok-webapp.service | head -8 || true
+	@echo "---"
+	@ss -tlnp 2>/dev/null | grep ':8765' || echo "  (nothing listening on :8765)"
 
 status:
 	@systemctl --no-pager status $(ALL_UNITS) || true
