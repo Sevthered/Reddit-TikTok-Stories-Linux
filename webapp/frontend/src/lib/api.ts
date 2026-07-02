@@ -106,6 +106,50 @@ export type JobOut = {
 	line_count: number;
 };
 
+// ---- Schedule tab (mirrors webapp/backend/routers/schedule.py) --------
+
+export type SlotOverrideValue = string | boolean | null;
+
+export type SlotEffective = {
+	instance: string;
+	publish_hour: number;
+	render_time: string;
+	upload_time: string;
+	render_enabled: boolean;
+	upload_enabled: boolean;
+	auto_approve: boolean;
+	notify_render_pre: boolean;
+	notify_render_crash: boolean;
+	notify_render_empty: boolean;
+	notify_upload_approval_card: boolean;
+	notify_upload_force_approve: boolean;
+	notify_upload_success: boolean;
+	notify_upload_failure: boolean;
+	notify_upload_gate_reject: boolean;
+};
+
+export type SlotView = {
+	instance: string;
+	defaults: Record<string, string | boolean | number>;
+	overrides: Record<string, string>;
+	effective: SlotEffective;
+};
+
+export type SlotsOut = {
+	slots: SlotView[];
+	helper_available: boolean;
+};
+
+export type OverrideIn = {
+	overrides: Record<string, SlotOverrideValue>;
+};
+
+export type PutSlotResult = {
+	slot: SlotView;
+	applied_time_changes: string[];
+	warnings: string[];
+};
+
 export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
 	const r = await fetch(path, {
 		method: 'POST',
