@@ -52,7 +52,6 @@ log = logging.getLogger("upload_worker")
 # Policy constants (mirror phase-6-posting-policy + phase-6-ops ADRs).
 _POST_TZ = ZoneInfo("Europe/Madrid")
 _POST_WINDOW_HOURS = {0, 12}                       # slot cadence (00/12 CEST)
-_MAX_POSTS_PER_DAY = 2                             # 2-slot schedule (00/12)
 _MIN_SPACING_HOURS = 2                             # Q9
 
 _PAUSE_FLAG = Path("data/PAUSE_UPLOADS")
@@ -71,9 +70,6 @@ def _gates_pass(db: Db, now_madrid: datetime) -> tuple[bool, str]:
         return False, "uploads_enabled=0 in config (Telegram /pause)"
     if now_madrid.hour not in _POST_WINDOW_HOURS:
         return False, f"outside slot window {{00,12}} CEST (hour={now_madrid.hour})"
-    posts = db.posts_today(_madrid_offset_hours(now_madrid))
-    if posts >= _MAX_POSTS_PER_DAY:
-        return False, f"cadence cap: {posts}/{_MAX_POSTS_PER_DAY} posts today"
     last = db.last_uploaded_at()
     if last:
         try:
@@ -88,13 +84,6 @@ def _gates_pass(db: Db, now_madrid: datetime) -> tuple[bool, str]:
                 mins = int(since.total_seconds() / 60)
                 return False, f"spacing: last upload {mins}m ago (<{_MIN_SPACING_HOURS}h)"
     return True, ""
-
-
-def _madrid_offset_hours(now_madrid: datetime) -> int:
-    """UTC offset in hours for the Madrid tz on this specific instant.
-    Passed to `db.posts_today()` so `today` is computed in CET/CEST, not UTC."""
-    off = now_madrid.utcoffset()
-    return int(off.total_seconds() // 3600) if off else 0
 
 
 # ---- Session-id expiry pre-flight -----------------------------------------
