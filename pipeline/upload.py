@@ -206,17 +206,21 @@ def _dismiss_studio_tooltips(page: Page, max_rounds: int = 8) -> None:
 
 def _fill_caption(page: Page, caption: str) -> None:
     """Draft.js editor lives inside `[data-e2e=caption_container]`. Focus it,
-    select-all-delete any stub, then type. Emojis and newlines pass through
-    fine via keyboard.type() (Draft.js handles paste-like keystrokes)."""
+    select-all-delete any stub (TikTok auto-populates the caption from the
+    uploaded filename, e.g. `1ul05ky` for `1ul05ky.mp4`), then type.
+
+    Use ControlOrMeta so the select-all works on both Linux Chromium
+    (Ctrl+A) and macOS Chromium (Cmd+A). The prior Meta-only shortcut
+    silently no-op'd on Linux, causing the typed caption to be appended
+    to the filename stub instead of replacing it.
+    """
     editor = page.locator(_SEL_CAPTION_EDITOR).first
     editor.wait_for(state="visible", timeout=30000)
     editor.click()
     page.wait_for_timeout(200)
-    # clear whatever placeholder text landed in the field
-    page.keyboard.press("Meta+A")
+    page.keyboard.press("ControlOrMeta+A")
     page.keyboard.press("Delete")
-    page.wait_for_timeout(100)
-    # type in one shot; Draft.js chokes if we push too fast — 8ms/char is safe
+    page.wait_for_timeout(150)
     page.keyboard.type(caption, delay=8)
     page.wait_for_timeout(500)
 
