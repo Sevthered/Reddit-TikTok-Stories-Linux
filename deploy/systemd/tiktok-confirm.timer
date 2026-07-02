@@ -1,6 +1,5 @@
 [Unit]
 Description=Fire tiktok-confirm every 30 min
-Requires=tiktok-confirm.service
 
 [Timer]
 OnBootSec=5min
