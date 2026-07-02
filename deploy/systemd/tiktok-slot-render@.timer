@@ -1,0 +1,23 @@
+[Unit]
+Description=Render trigger for slot %i (per-instance OnCalendar in .timer.d/override.conf)
+
+[Timer]
+# No OnCalendar here. Every enabled instance MUST have a drop-in at
+# /etc/systemd/system/tiktok-slot-render@%i.timer.d/override.conf
+# setting `OnCalendar=*-*-* HH:MM:00 Europe/Madrid`. Written by the root
+# helper `tiktok-slot-time-write` on `add-slot` / `set-time`.
+#
+# Persistent=false is intentional: on a missed fire (host down, drop-in
+# recently changed) systemd MUST NOT catch up — the slot is just skipped
+# and the next scheduled fire is picked. See
+# [[bugs/2026-07-02-daemon-reload-cascade]] and
+# [[bugs/2026-07-02-timer-restart-fires-service]].
+#
+# Requires= intentionally absent under [Unit] — the .service unit
+# already declares `Requires=tiktok-xvfb.service`. A Requires= here
+# would re-introduce the daemon-reload cascade.
+Persistent=false
+Unit=tiktok-slot-render@%i.service
+
+[Install]
+WantedBy=timers.target
