@@ -150,6 +150,35 @@ export type PutSlotResult = {
 	warnings: string[];
 };
 
+export type CreateSlotIn = {
+	instance: string;
+	render_time: string;
+	upload_time: string;
+	auto_approve: boolean;
+};
+
+export type DeleteSlotResult = {
+	instance: string;
+	manifest_wiped: boolean;
+	orphan_post_ids: string[];
+	warnings: string[];
+};
+
+export async function apiDelete<T>(path: string): Promise<T> {
+	const r = await fetch(path, { method: 'DELETE' });
+	if (!r.ok) {
+		let msg = `${r.status}`;
+		try {
+			const j = await r.json();
+			if (j?.detail) msg = j.detail;
+		} catch {
+			// non-JSON body
+		}
+		throw new Error(msg);
+	}
+	return (await r.json()) as T;
+}
+
 export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
 	const r = await fetch(path, {
 		method: 'POST',

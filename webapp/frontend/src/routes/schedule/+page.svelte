@@ -4,19 +4,22 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Alert from '$lib/components/ui/alert';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button, buttonVariants } from '$lib/components/ui/button';
 	import { Switch } from '$lib/components/ui/switch';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { Separator } from '$lib/components/ui/separator';
-	import { AlertTriangle, RotateCcw, Save } from '@lucide/svelte';
+	import { AlertTriangle, Plus, RotateCcw, Save, Trash2 } from '@lucide/svelte';
 	import {
 		apiGet,
 		apiPost,
 		apiPut,
+		apiDelete,
 		type SlotEffective,
 		type SlotView,
 		type SlotsOut,
 		type PutSlotResult,
+		type DeleteSlotResult,
 		type SlotOverrideValue
 	} from '$lib/api';
 
@@ -30,6 +33,120 @@
 	let working = $state<Record<string, SlotEffective>>({});
 	let saving = $state<Record<string, boolean>>({});
 	let resetDialog = $state<string | null>(null);
+	let deleteDialog = $state<string | null>(null);
+
+	// ---- Add slot dialog ----------------------------------------------
+
+	let addOpen = $state(false);
+	let addRender = $state('12:00');
+	let addUpload = $state('12:30');
+	let addAutoApprove = $state(false);
+	let addInstance = $state('1230');
+	let addSubmitting = $state(false);
+
+	function timeToMinutesSafe(hhmm: string): number {
+		if (!/^\d{2}:\d{2}$/.test(hhmm)) return NaN;
+		const [h, m] = hhmm.split(':');
+		return parseInt(h) * 60 + parseInt(m);
+	}
+
+	function instanceFromUpload(hhmm: string): string {
+		if (!/^\d{2}:\d{2}$/.test(hhmm)) return '';
+		return hhmm.replace(':', '');
+	}
+
+	// Re-derive the instance name every time the operator touches
+	// upload time, but let them override it manually before submit.
+	let addInstanceUserEdited = $state(false);
+	function onAddUploadChange(v: string) {
+		addUpload = v;
+		if (!addInstanceUserEdited) {
+			addInstance = instanceFromUpload(v);
+		}
+	}
+	function onAddInstanceChange(v: string) {
+		addInstance = v.replace(/\D/g, '').slice(0, 4);
+		addInstanceUserEdited = true;
+	}
+
+	function addOrderingError(): string | null {
+		if (!/^\d{2}:\d{2}$/.test(addRender) || !/^\d{2}:\d{2}$/.test(addUpload))
+			return 'Times must be HH:MM.';
+		const r = timeToMinutesSafe(addRender);
+		let u = timeToMinutesSafe(addUpload);
+		if (u <= r) u += 24 * 60;
+		if (u - r < 15) return 'Upload must be at least 15 minutes after render.';
+		return null;
+	}
+
+	function addInstanceError(): string | null {
+		if (!/^\d{4}$/.test(addInstance)) return 'Instance must be 4 digits.';
+		if (slots.some((s) => s.instance === addInstance))
+			return `Slot ${addInstance} already exists.`;
+		return null;
+	}
+
+	function openAddDialog() {
+		addRender = '12:00';
+		addUpload = '12:30';
+		addAutoApprove = false;
+		addInstance = '1230';
+		addInstanceUserEdited = false;
+		addOpen = true;
+	}
+
+	async function submitAdd() {
+		const ordErr = addOrderingError();
+		const instErr = addInstanceError();
+		if (ordErr || instErr) {
+			toast.error('Cannot add slot', { description: ordErr ?? instErr ?? '' });
+			return;
+		}
+		addSubmitting = true;
+		try {
+			const res = await apiPost<PutSlotResult>('/api/schedule/slots', {
+				instance: addInstance,
+				render_time: addRender,
+				upload_time: addUpload,
+				auto_approve: addAutoApprove
+			});
+			slots = [...slots, res.slot].sort((a, b) => a.instance.localeCompare(b.instance));
+			working = { ...working, [res.slot.instance]: { ...res.slot.effective } };
+			toast.success(`Slot ${res.slot.instance} added`);
+			addOpen = false;
+		} catch (e) {
+			toast.error('Add slot failed', { description: (e as Error).message });
+		} finally {
+			addSubmitting = false;
+		}
+	}
+
+	async function deleteSlotAction(instance: string) {
+		saving = { ...saving, [instance]: true };
+		try {
+			const res = await apiDelete<DeleteSlotResult>(
+				`/api/schedule/slots/${instance}`
+			);
+			slots = slots.filter((s) => s.instance !== instance);
+			const nextWorking = { ...working };
+			delete nextWorking[instance];
+			working = nextWorking;
+			const orphanNote =
+				res.orphan_post_ids.length > 0
+					? ` — ${res.orphan_post_ids.length} orphan post${
+							res.orphan_post_ids.length === 1 ? '' : 's'
+						} flagged via Telegram`
+					: '';
+			toast.success(`Slot ${instance} deleted${orphanNote}`);
+		} catch (e) {
+			toast.error(`Slot ${instance} delete failed`, {
+				description: (e as Error).message
+			});
+		} finally {
+			saving = { ...saving, [instance]: false };
+			deleteDialog = null;
+		}
+	}
 
 	async function load() {
 		loading = true;
@@ -220,6 +337,15 @@
 				Per-slot render / upload times, notifications, auto-approve · Europe/Madrid
 			</p>
 		</div>
+		<Button
+			size="sm"
+			onclick={openAddDialog}
+			disabled={loading || !helperAvailable}
+			title={!helperAvailable ? 'Requires root helper' : ''}
+		>
+			<Plus size={13} strokeWidth={1.75} class="mr-1" />
+			Add slot
+		</Button>
 	</div>
 
 	{#if !loading && !helperAvailable}
@@ -239,6 +365,15 @@
 			<Skeleton class="h-64 w-full" />
 			<Skeleton class="h-64 w-full" />
 		</div>
+	{:else if slots.length === 0}
+		<Alert.Root class="border-destructive/50 bg-destructive/5">
+			<AlertTriangle class="text-destructive" size={16} strokeWidth={1.75} />
+			<Alert.Title class="text-[13px]">No slots configured</Alert.Title>
+			<Alert.Description class="text-[12px]">
+				The pipeline will not fire automatically until at least one slot is added.
+				Click <b>Add slot</b> above to schedule a render + upload cadence.
+			</Alert.Description>
+		</Alert.Root>
 	{:else}
 		{#each slots as slot (slot.instance)}
 			{@const w = working[slot.instance]}
@@ -440,44 +575,163 @@
 
 					<Separator />
 
-					<!-- ===== Reset ===== -->
+					<!-- ===== Reset / Delete ===== -->
 					<div class="flex items-center justify-between">
 						<p class="eyebrow text-[10px] text-muted-foreground">
-							Reset clears every override in DB and removes the timer drop-ins.
+							Reset clears behavior + notification overrides. Delete removes the slot entirely.
 						</p>
-						<AlertDialog.Root
-							open={resetDialog === slot.instance}
-							onOpenChange={(v) => (resetDialog = v ? slot.instance : null)}
-						>
-							<AlertDialog.Trigger
-								class={buttonVariants({ variant: 'ghost', size: 'sm' })}
-								disabled={busy}
+						<div class="flex items-center gap-1">
+							<AlertDialog.Root
+								open={resetDialog === slot.instance}
+								onOpenChange={(v) => (resetDialog = v ? slot.instance : null)}
 							>
-								<RotateCcw size={13} strokeWidth={1.75} class="mr-1" />
-								Reset to defaults
-							</AlertDialog.Trigger>
-							<AlertDialog.Content>
-								<AlertDialog.Header>
-									<AlertDialog.Title>Reset slot {slot.instance}?</AlertDialog.Title>
-									<AlertDialog.Description>
-										Clears every override for this slot and removes both timer
-										drop-ins. Fire times revert to the base
-										<code class="font-mono">.timer</code> files
-										({slot.defaults.render_time} render, {slot.defaults.upload_time} upload).
-										Behavior + notifications revert to code defaults.
-									</AlertDialog.Description>
-								</AlertDialog.Header>
-								<AlertDialog.Footer>
-									<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-									<AlertDialog.Action onclick={() => resetSlot(slot.instance)}>
-										Reset
-									</AlertDialog.Action>
-								</AlertDialog.Footer>
-							</AlertDialog.Content>
-						</AlertDialog.Root>
+								<AlertDialog.Trigger
+									class={buttonVariants({ variant: 'ghost', size: 'sm' })}
+									disabled={busy}
+								>
+									<RotateCcw size={13} strokeWidth={1.75} class="mr-1" />
+									Reset overrides
+								</AlertDialog.Trigger>
+								<AlertDialog.Content>
+									<AlertDialog.Header>
+										<AlertDialog.Title>Reset slot {slot.instance}?</AlertDialog.Title>
+										<AlertDialog.Description>
+											Clears every behavior + notification override in the DB
+											for this slot. Times ({slot.effective.render_time} render,
+											{slot.effective.upload_time} upload) and
+											auto-approve stay on the slot row. Delete the slot instead
+											if you want to recreate it with different times.
+										</AlertDialog.Description>
+									</AlertDialog.Header>
+									<AlertDialog.Footer>
+										<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+										<AlertDialog.Action onclick={() => resetSlot(slot.instance)}>
+											Reset
+										</AlertDialog.Action>
+									</AlertDialog.Footer>
+								</AlertDialog.Content>
+							</AlertDialog.Root>
+
+							<AlertDialog.Root
+								open={deleteDialog === slot.instance}
+								onOpenChange={(v) => (deleteDialog = v ? slot.instance : null)}
+							>
+								<AlertDialog.Trigger
+									class={buttonVariants({ variant: 'ghost', size: 'sm' })
+										+ ' text-destructive hover:text-destructive'}
+									disabled={busy || !helperAvailable}
+									title={!helperAvailable ? 'Requires root helper' : ''}
+								>
+									<Trash2 size={13} strokeWidth={1.75} class="mr-1" />
+									Delete slot
+								</AlertDialog.Trigger>
+								<AlertDialog.Content>
+									<AlertDialog.Header>
+										<AlertDialog.Title>Delete slot {slot.instance}?</AlertDialog.Title>
+										<AlertDialog.Description>
+											Stops + disables both timers, removes both drop-ins, wipes
+											the DB row + every override. Any pending manifest is
+											removed and any orphan pending posts are flagged via Telegram
+											so you can approve / reject them via /queue.
+											<span class="block mt-2 text-destructive">
+												This is not reversible from the UI. Re-add the slot to restore it.
+											</span>
+										</AlertDialog.Description>
+									</AlertDialog.Header>
+									<AlertDialog.Footer>
+										<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+										<AlertDialog.Action
+											class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+											onclick={() => deleteSlotAction(slot.instance)}
+										>
+											Delete
+										</AlertDialog.Action>
+									</AlertDialog.Footer>
+								</AlertDialog.Content>
+							</AlertDialog.Root>
+						</div>
 					</div>
 				</Card.Content>
 			</Card.Root>
 		{/each}
 	{/if}
 </div>
+
+<!-- ============================ Add slot dialog ==================== -->
+<Dialog.Root bind:open={addOpen}>
+	<Dialog.Content class="max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>Add slot</Dialog.Title>
+			<Dialog.Description>
+				Creates a new render + upload pair on systemd. Instance name is
+				auto-derived from upload time; edit it before submit if you want
+				a different label.
+			</Dialog.Description>
+		</Dialog.Header>
+
+		<div class="space-y-4 pt-2">
+			<div class="grid grid-cols-2 gap-3">
+				<div class="space-y-1.5">
+					<span class="eyebrow">Render time</span>
+					<input
+						type="time"
+						bind:value={addRender}
+						class="w-full rounded-md border border-input bg-background px-2.5 py-1.5 font-mono text-[13px] tnum focus:outline-none focus:ring-2 focus:ring-ring"
+					/>
+				</div>
+				<div class="space-y-1.5">
+					<span class="eyebrow">Upload time (publish)</span>
+					<input
+						type="time"
+						value={addUpload}
+						oninput={(e) => onAddUploadChange((e.currentTarget as HTMLInputElement).value)}
+						class="w-full rounded-md border border-input bg-background px-2.5 py-1.5 font-mono text-[13px] tnum focus:outline-none focus:ring-2 focus:ring-ring"
+					/>
+				</div>
+			</div>
+
+			{#if addOrderingError()}
+				<p class="text-[12px] text-destructive font-mono">{addOrderingError()}</p>
+			{/if}
+
+			<div class="space-y-1.5">
+				<span class="eyebrow">Instance name</span>
+				<input
+					type="text"
+					inputmode="numeric"
+					maxlength="4"
+					value={addInstance}
+					oninput={(e) => onAddInstanceChange((e.currentTarget as HTMLInputElement).value)}
+					class="w-24 rounded-md border border-input bg-background px-2.5 py-1.5 font-mono text-[13px] tnum focus:outline-none focus:ring-2 focus:ring-ring"
+				/>
+				<p class="eyebrow text-[10px] text-muted-foreground">
+					4 digits. Systemd unit identity — stays fixed after creation.
+				</p>
+				{#if addInstanceError()}
+					<p class="text-[12px] text-destructive font-mono">{addInstanceError()}</p>
+				{/if}
+			</div>
+
+			<label class="flex items-center justify-between gap-3 text-[13px]">
+				<span>
+					<span class="block">Auto-approve render</span>
+					<span class="eyebrow text-[10px] text-muted-foreground">
+						Skip approval card and post at publish hour. Interactive
+						slots leave this off.
+					</span>
+				</span>
+				<Switch bind:checked={addAutoApprove} class="scale-90" />
+			</label>
+		</div>
+
+		<Dialog.Footer>
+			<Button variant="ghost" onclick={() => (addOpen = false)}>Cancel</Button>
+			<Button
+				disabled={addSubmitting || !!addOrderingError() || !!addInstanceError()}
+				onclick={submitAdd}
+			>
+				{addSubmitting ? 'Creating…' : 'Create slot'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
