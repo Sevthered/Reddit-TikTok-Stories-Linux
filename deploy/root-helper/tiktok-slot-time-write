@@ -103,12 +103,16 @@ EOF
   fi
 
   systemctl daemon-reload
-  # Restart the timer so it picks up the new OnCalendar= immediately.
-  # Timer units are cheap to restart; the associated .service is not
-  # triggered by the restart itself (Requires= was stripped in
-  # commit 87025a3 to kill the daemon-reload cascade).
-  systemctl restart "$timer_unit"
-  echo "$SELF: reloaded + restarted $timer_unit"
+  # NOTE: intentionally NO `systemctl restart "$timer_unit"` here.
+  # Under systemd 255 (Ubuntu 24.04), restarting a timer whose new
+  # OnCalendar= elapse is already in the past can immediately trigger
+  # the associated service on the restart cycle, even with
+  # Persistent=false — observed 2026-07-02 14:36 firing the 12:00
+  # render mid-afternoon. `daemon-reload` alone is enough: systemd
+  # re-reads the drop-in on next timer eval and updates
+  # NextElapseUSecRealtime without ever transitioning the timer
+  # through activation. See bugs/2026-07-02-timer-restart-fires-service.
+  echo "$SELF: reloaded (drop-in changes take effect on next timer eval)"
 }
 
 usage() {
