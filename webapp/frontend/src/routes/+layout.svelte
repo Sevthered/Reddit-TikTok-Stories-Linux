@@ -11,6 +11,7 @@
 		Rocket,
 		Play,
 		Settings2,
+		CalendarClock,
 		Terminal,
 		Sun,
 		Moon
@@ -26,6 +27,7 @@
 		{ href: '/upload', label: 'Upload', icon: Rocket },
 		{ href: '/jobs', label: 'Jobs', icon: Play },
 		{ href: '/config', label: 'Config', icon: Settings2 },
+		{ href: '/schedule', label: 'Schedule', icon: CalendarClock },
 		{ href: '/logs', label: 'Logs', icon: Terminal }
 	];
 
