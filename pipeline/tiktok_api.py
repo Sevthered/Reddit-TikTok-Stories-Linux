@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -28,6 +29,13 @@ DEFAULT_FIELDS = "id,title,video_description,share_url,cover_image_url,create_ti
 
 _TOKEN_CACHE = Path("data/tiktok_tokens.json")
 _ACCESS_TTL_SAFETY_MARGIN_S = 300  # refresh 5 min before expiry
+
+# Sandbox video URLs come back with a numeric suffix on the handle
+# (e.g. `@realredditstories8464`) and utm_* tracking params. Rewrite both
+# so the URL stored in the DB / sent to Telegram is the canonical
+# public one. TIKTOK_HANDLE holds the real handle, cased however TikTok
+# renders it (e.g. `RealRedditStories`).
+_HANDLE_URL_RE = re.compile(r"^(https://www\.tiktok\.com/)@[^/]+(/.*)$")
 
 
 @dataclass
@@ -134,6 +142,21 @@ def get_access_token() -> str:
     return new_at
 
 
+def _canonical_share_url(url: str) -> str:
+    """Drop utm_* + tracking params and rewrite the sandbox handle prefix
+    to the canonical `TIKTOK_HANDLE` if set. Leaves other URLs untouched."""
+    if not url:
+        return url
+    parsed = urllib.parse.urlsplit(url)
+    stripped = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+    handle = (os.environ.get("TIKTOK_HANDLE") or "").strip().lstrip("@")
+    if handle:
+        m = _HANDLE_URL_RE.match(stripped)
+        if m:
+            stripped = f"{m.group(1)}@{handle}{m.group(2)}"
+    return stripped
+
+
 def video_list(max_count: int = 20, cursor: int | None = None,
                fields: str = DEFAULT_FIELDS) -> tuple[list[Video], int | None, bool]:
     """Fetch the authenticated user's videos, newest first.
@@ -158,7 +181,7 @@ def video_list(max_count: int = 20, cursor: int | None = None,
         videos.append(Video(
             id=str(v.get("id", "")),
             title=v.get("title", "") or "",
-            share_url=v.get("share_url", "") or "",
+            share_url=_canonical_share_url(v.get("share_url", "") or ""),
             cover_image_url=v.get("cover_image_url", "") or "",
             create_time=int(v.get("create_time", 0)),
             description=v.get("video_description", "") or "",
