@@ -28,9 +28,7 @@ TIMERS=(
   tiktok-confirm.timer
   tiktok-retention.timer
   tiktok-slot-render@0000.timer  tiktok-slot-upload@0000.timer
-  tiktok-slot-render@0600.timer  tiktok-slot-upload@0600.timer
   tiktok-slot-render@1200.timer  tiktok-slot-upload@1200.timer
-  tiktok-slot-render@1800.timer  tiktok-slot-upload@1800.timer
 )
 
 need_root() {

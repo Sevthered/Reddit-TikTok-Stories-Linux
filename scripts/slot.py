@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fixed-schedule slot orchestrator: 4 slots/day at 00:00, 06:00, 12:00, 18:00
+"""Fixed-schedule slot orchestrator: 2 slots/day at 00:00, 12:00
 Europe/Madrid.
 
 Two systemd-invoked subcommands:
@@ -58,9 +58,7 @@ class SlotCfg:
 
 SLOTS: dict[str, SlotCfg] = {
     "0000": SlotCfg(publish_hour=0,  auto_approve=True,  warn_pre_render=False),
-    "0600": SlotCfg(publish_hour=6,  auto_approve=True,  warn_pre_render=False),
     "1200": SlotCfg(publish_hour=12, auto_approve=False, warn_pre_render=True),
-    "1800": SlotCfg(publish_hour=18, auto_approve=False, warn_pre_render=True),
 }
 
 
