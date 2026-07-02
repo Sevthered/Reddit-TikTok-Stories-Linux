@@ -130,14 +130,18 @@ cmd_install_helper() {
 # Idempotent: rerunnable safely; concrete files that are already gone are
 # skipped, and existing drop-ins are preserved.
 #
-# Safety ordering:
+# Safety ordering (revised 2026-07-02 after P5R.7 QA):
 #   1. install/refresh the templated `@.timer` base files first
-#   2. daemon-reload (still safe — Requires= is not present in base)
-#   3. for each seed slot: ensure a drop-in exists with matching OnCalendar
+#   2. daemon-reload
+#   3. write drop-ins for the seed slots (skip existing)
 #   4. daemon-reload
-#   5. enable the templated instances via `systemctl enable`
-#   6. stop + disable + rm the concrete per-instance timer files
-#   7. daemon-reload one last time
+#   5. **remove concrete per-instance .timer files BEFORE enable**
+#      (systemctl enable would otherwise resolve to the concrete file
+#      and create a symlink that dangles after step 5 removes the target)
+#   6. daemon-reload (clears symlink refs to removed files)
+#   7. enable the templated instances via `systemctl enable --now`
+#      (with concrete gone, enable resolves to the templated base)
+#   8. final daemon-reload
 #
 # Missing seed = SILENTLY SKIP a drop-in write for an instance whose
 # concrete file doesn't exist. Existing drop-in for an instance = SKIPPED
@@ -167,16 +171,7 @@ cmd_migrate_slots() {
   echo "4. daemon-reload"
   systemctl daemon-reload
 
-  echo "5. enable templated timer instances (does not fire — see P5R.0 research)"
-  for seed in "${SEED_SLOTS[@]}"; do
-    IFS=":" read -r inst render_h render_m upload_h upload_m <<< "$seed"
-    systemctl enable "tiktok-slot-render@${inst}.timer" 2>&1 | tail -1 || true
-    systemctl enable "tiktok-slot-upload@${inst}.timer" 2>&1 | tail -1 || true
-    systemctl start "tiktok-slot-render@${inst}.timer"
-    systemctl start "tiktok-slot-upload@${inst}.timer"
-  done
-
-  echo "6. remove concrete per-instance .timer files (if any survive)"
+  echo "5. remove concrete per-instance .timer files BEFORE enable"
   local concrete
   for concrete in "$SYSTEMD_DIR"/tiktok-slot-render@[0-9]*.timer \
                   "$SYSTEMD_DIR"/tiktok-slot-upload@[0-9]*.timer; do
@@ -192,7 +187,20 @@ cmd_migrate_slots() {
     echo "   removed $unit"
   done
 
-  echo "7. final daemon-reload"
+  echo "6. daemon-reload after concrete removal"
+  systemctl daemon-reload
+
+  echo "7. enable templated instances (concrete gone → symlink resolves to base)"
+  for seed in "${SEED_SLOTS[@]}"; do
+    IFS=":" read -r inst render_h render_m upload_h upload_m <<< "$seed"
+    # `enable --now` on a fresh templated timer with Persistent=false does
+    # NOT fire the service even with past-time OnCalendar (P5R.0 research).
+    # Safe to run this in the middle of the day.
+    systemctl enable --now "tiktok-slot-render@${inst}.timer"
+    systemctl enable --now "tiktok-slot-upload@${inst}.timer"
+  done
+
+  echo "8. final daemon-reload"
   systemctl daemon-reload
 
   echo "== done. Verify with: systemctl list-timers 'tiktok-slot-*' =="

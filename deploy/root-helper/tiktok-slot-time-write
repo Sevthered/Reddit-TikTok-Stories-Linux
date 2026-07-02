@@ -167,14 +167,15 @@ cmd_delete_slot() {
   local inst="$1"
   validate_inst "$inst"
 
-  # Disable + stop each timer if present. `disable --now` handles both
-  # the symlink removal and the stop transition in one call.
   local kind
   for kind in render upload; do
     local unit="tiktok-slot-${kind}@${inst}.timer"
-    if systemctl list-unit-files "$unit" 2>/dev/null | grep -q "^${unit}"; then
-      systemctl disable --now "$unit" 2>&1 | tail -1 || true
-    fi
+    # `disable --now` removes the symlink + stops the unit. Templated
+    # instances then linger as `LoadState=bad-setting` ghost entries in
+    # `systemctl list-timers` output until an explicit `stop` (see
+    # observation during P5R.8 QA on 2026-07-02). Do both.
+    sudo_systemctl disable --now "$unit"
+    sudo_systemctl stop "$unit"
   done
 
   # Wipe any drop-in dirs.
@@ -187,6 +188,12 @@ cmd_delete_slot() {
   systemctl reset-failed "tiktok-slot-render@${inst}.service" 2>/dev/null || true
   systemctl reset-failed "tiktok-slot-upload@${inst}.service" 2>/dev/null || true
   echo "$SELF: deleted slot ${inst}"
+}
+
+# Wrapper so we can suppress "Unit not loaded" errors + retain visibility
+# of anything real. Runs as root already (helper is root-only).
+sudo_systemctl() {
+  systemctl "$@" 2>&1 | tail -1 || true
 }
 
 usage() {
