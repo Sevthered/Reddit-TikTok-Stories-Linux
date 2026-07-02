@@ -150,13 +150,19 @@ def _validate_value(field_name: str, value: Any) -> Any:
 
 
 def _validate_time_pair(render_time: str, upload_time: str) -> None:
-    """upload_time must be at least 15 minutes AFTER render_time on the
-    same day. Rejecting equality avoids racing systemd against the
-    render pipeline finishing."""
+    """upload_time must be at least 15 minutes AFTER render_time.
+    Cross-midnight aware: a slot with render at 23:30 and upload at
+    00:00 the next day is a 30-min gap, not a -1410-min gap.
+    Rejecting equality avoids racing systemd against the render
+    pipeline finishing."""
     def _mins(hhmm: str) -> int:
         h, m = hhmm.split(":")
         return int(h) * 60 + int(m)
-    if _mins(upload_time) - _mins(render_time) < 15:
+    render_m = _mins(render_time)
+    upload_m = _mins(upload_time)
+    if upload_m <= render_m:
+        upload_m += 24 * 60  # next-day upload
+    if upload_m - render_m < 15:
         raise HTTPException(
             400,
             detail=(

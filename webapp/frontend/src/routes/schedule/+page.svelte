@@ -100,7 +100,13 @@
 	function orderingError(w: SlotEffective): string | null {
 		if (!/^\d{2}:\d{2}$/.test(w.render_time) || !/^\d{2}:\d{2}$/.test(w.upload_time))
 			return null;
-		if (timeToMinutes(w.upload_time) - timeToMinutes(w.render_time) < 15)
+		const r = timeToMinutes(w.render_time);
+		let u = timeToMinutes(w.upload_time);
+		// Cross-midnight: upload at 00:00 after render at 23:30 is +30min,
+		// not -1410min. If upload appears at-or-before render, treat it as
+		// the next day.
+		if (u <= r) u += 24 * 60;
+		if (u - r < 15)
 			return 'Upload must be at least 15 minutes after render.';
 		return null;
 	}
