@@ -1,26 +1,34 @@
 #!/usr/bin/env bash
 # tiktok-slot-time-write — root-owned helper for the webapp Schedule tab.
 #
-# Writes a per-instance systemd drop-in override for the render or upload
-# timer so the webapp can change fire times without gaining a general
+# Writes systemd drop-ins that arm the templated slot timers so the
+# webapp can create + edit + delete slots without gaining a general
 # root shell. Invoked as:
 #
 #   sudo /usr/local/sbin/tiktok-slot-time-write set-time <inst> <kind> <HH:MM|clear>
+#   sudo /usr/local/sbin/tiktok-slot-time-write add-slot <inst> <render_HH:MM> <upload_HH:MM>
+#   sudo /usr/local/sbin/tiktok-slot-time-write delete-slot <inst>
 #
 # Where:
-#   <inst>  is a 4-digit slot instance name (e.g. 0000, 1200)
+#   <inst>  is a 4-digit slot instance name (e.g. 0000, 1200, 1530)
 #   <kind>  is render | upload
 #   <HH:MM> is 00:00 .. 23:59 (Madrid) — writes a drop-in that sets
 #           `OnCalendar=*-*-* HH:MM:00 Europe/Madrid` on the timer
-#   clear   removes the drop-in dir entirely; the base .timer file's
-#           OnCalendar= is restored
+#   clear   removes the drop-in dir; timer stops firing unless the
+#           templated base file provides an OnCalendar (it does not)
 #
-# On write/clear the helper runs `daemon-reload` and restarts the
-# affected timer so the new schedule takes effect immediately.
+# `add-slot` creates drop-ins for BOTH kinds and `systemctl enable`s
+# the templated instances. `delete-slot` stops + disables both and
+# wipes both drop-in dirs.
 #
-# Every input is validated with anchored regex. The paths the helper
-# touches are constructed only from validated inputs. The sudoers
-# entry whitelists this exact path with NOPASSWD.
+# NEVER runs `systemctl restart <timer>` after writing a drop-in — see
+# bugs/2026-07-02-timer-restart-fires-service. `daemon-reload` alone
+# updates NextElapseUSecRealtime without any activation cycle.
+#
+# Every input arg is validated with anchored regex before any
+# filesystem touch. The paths the helper touches are constructed only
+# from validated inputs. The sudoers entry whitelists this exact path
+# with NOPASSWD.
 
 set -euo pipefail
 
@@ -57,70 +65,138 @@ validate_hhmm() {
     || die "bad time $hhmm (expected HH:MM 00:00..23:59)"
 }
 
+# Guard rail: only remove/write drop-in dirs we know about.
+_dropin_path_ok() {
+  local dir="$1"
+  case "$dir" in
+    "$SYSTEMD_DIR"/tiktok-slot-render@[0-9][0-9][0-9][0-9].timer.d) return 0 ;;
+    "$SYSTEMD_DIR"/tiktok-slot-upload@[0-9][0-9][0-9][0-9].timer.d) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Write a drop-in `override.conf` for <inst>/<kind> with the given HH:MM.
+_write_dropin() {
+  local inst="$1" kind="$2" hhmm="$3"
+  local dropin_dir="${SYSTEMD_DIR}/tiktok-slot-${kind}@${inst}.timer.d"
+  local dropin_file="${dropin_dir}/override.conf"
+
+  # The base template must exist — otherwise a rogue writer could plant
+  # a drop-in for a non-existent unit.
+  if [[ ! -f "${SYSTEMD_DIR}/tiktok-slot-${kind}@.timer" ]]; then
+    die "base template ${SYSTEMD_DIR}/tiktok-slot-${kind}@.timer not found"
+  fi
+
+  _dropin_path_ok "$dropin_dir" \
+    || die "refusing to write $dropin_dir (path did not pass sanity check)"
+
+  install -d -m 0755 -o root -g root "$dropin_dir"
+  local tmp
+  tmp="$(mktemp "${dropin_dir}/override.XXXXXX")"
+  # `OnCalendar=` (empty first) resets the list, then the second line
+  # sets ours. This override style is documented under systemd.timer(5).
+  cat >"$tmp" <<EOF
+# Written by ${SELF} at $(date -u +%Y-%m-%dT%H:%M:%SZ) UTC
+# Overrides the templated timer's OnCalendar= for slot ${inst} (${kind}).
+[Timer]
+OnCalendar=
+OnCalendar=*-*-* ${hhmm}:00 Europe/Madrid
+EOF
+  chmod 0644 "$tmp"
+  mv "$tmp" "$dropin_file"
+  echo "$SELF: wrote ${dropin_file} (OnCalendar=*-*-* ${hhmm}:00 Europe/Madrid)"
+}
+
+# Remove the drop-in dir for <inst>/<kind> if present.
+_clear_dropin() {
+  local inst="$1" kind="$2"
+  local dropin_dir="${SYSTEMD_DIR}/tiktok-slot-${kind}@${inst}.timer.d"
+  _dropin_path_ok "$dropin_dir" \
+    || die "refusing to remove $dropin_dir (path did not pass sanity check)"
+  if [[ -d "$dropin_dir" ]]; then
+    rm -rf "$dropin_dir"
+    echo "$SELF: cleared drop-in for tiktok-slot-${kind}@${inst}.timer"
+  fi
+}
+
 cmd_set_time() {
   local inst="$1" kind="$2" arg="$3"
   validate_inst "$inst"
   validate_kind "$kind"
 
-  local timer_unit="tiktok-slot-${kind}@${inst}.timer"
-  local dropin_dir="${SYSTEMD_DIR}/${timer_unit}.d"
-  local dropin_file="${dropin_dir}/override.conf"
-
-  # Base timer must exist — otherwise a rogue writer could plant a
-  # drop-in for a non-existent unit.
-  if [[ ! -f "${SYSTEMD_DIR}/${timer_unit}" ]]; then
-    die "base timer ${SYSTEMD_DIR}/${timer_unit} not found"
-  fi
-
   if [[ "$arg" == "clear" ]]; then
-    # Guard rail: only remove drop-in dirs we own.
-    if [[ "$dropin_dir" != "${SYSTEMD_DIR}/tiktok-slot-"*.timer.d ]]; then
-      die "refusing to remove $dropin_dir (path did not pass sanity check)"
-    fi
-    rm -rf "$dropin_dir"
-    echo "$SELF: cleared drop-in for $timer_unit"
+    _clear_dropin "$inst" "$kind"
   else
     validate_hhmm "$arg"
-
-    install -d -m 0755 -o root -g root "$dropin_dir"
-
-    local tmp
-    tmp="$(mktemp "${dropin_dir}/override.XXXXXX")"
-    # `OnCalendar=` (empty first) resets the list, then the second line
-    # sets ours. This override style is documented under
-    # `systemd.timer(5)` — otherwise systemd merges lists across
-    # drop-ins and the base OnCalendar would still fire.
-    cat >"$tmp" <<EOF
-# Written by ${SELF} at $(date -u +%Y-%m-%dT%H:%M:%SZ) UTC
-# Overrides the base timer's OnCalendar= for slot ${inst} (${kind}).
-[Timer]
-OnCalendar=
-OnCalendar=*-*-* ${arg}:00 Europe/Madrid
-EOF
-    chmod 0644 "$tmp"
-    mv "$tmp" "$dropin_file"
-    echo "$SELF: wrote ${dropin_file} (OnCalendar=*-*-* ${arg}:00 Europe/Madrid)"
+    _write_dropin "$inst" "$kind" "$arg"
   fi
 
   systemctl daemon-reload
-  # NOTE: intentionally NO `systemctl restart "$timer_unit"` here.
-  # Under systemd 255 (Ubuntu 24.04), restarting a timer whose new
-  # OnCalendar= elapse is already in the past can immediately trigger
-  # the associated service on the restart cycle, even with
-  # Persistent=false — observed 2026-07-02 14:36 firing the 12:00
-  # render mid-afternoon. `daemon-reload` alone is enough: systemd
-  # re-reads the drop-in on next timer eval and updates
-  # NextElapseUSecRealtime without ever transitioning the timer
-  # through activation. See bugs/2026-07-02-timer-restart-fires-service.
   echo "$SELF: reloaded (drop-in changes take effect on next timer eval)"
+}
+
+cmd_add_slot() {
+  local inst="$1" render_time="$2" upload_time="$3"
+  validate_inst "$inst"
+  validate_hhmm "$render_time"
+  validate_hhmm "$upload_time"
+
+  # Refuse duplicate — an existing enabled timer means the slot is live
+  # and shouldn't be silently reconfigured. The webapp router already
+  # rejects duplicates against the `slots` table; this is defence in
+  # depth.
+  if [[ -L "${SYSTEMD_DIR}/timers.target.wants/tiktok-slot-render@${inst}.timer" \
+     || -L "${SYSTEMD_DIR}/timers.target.wants/tiktok-slot-upload@${inst}.timer" ]]; then
+    die "slot ${inst} is already enabled (use set-time to change its schedule)"
+  fi
+
+  _write_dropin "$inst" "render" "$render_time"
+  _write_dropin "$inst" "upload" "$upload_time"
+
+  systemctl daemon-reload
+
+  # `enable --now` on a fresh timer with Persistent=false does NOT fire
+  # its service even if OnCalendar is in the past today — verified in
+  # research task P5R.0 (see wiki/decisions/dynamic-slots).
+  systemctl enable --now "tiktok-slot-render@${inst}.timer"
+  systemctl enable --now "tiktok-slot-upload@${inst}.timer"
+  echo "$SELF: added slot ${inst} (render ${render_time}, upload ${upload_time})"
+}
+
+cmd_delete_slot() {
+  local inst="$1"
+  validate_inst "$inst"
+
+  # Disable + stop each timer if present. `disable --now` handles both
+  # the symlink removal and the stop transition in one call.
+  local kind
+  for kind in render upload; do
+    local unit="tiktok-slot-${kind}@${inst}.timer"
+    if systemctl list-unit-files "$unit" 2>/dev/null | grep -q "^${unit}"; then
+      systemctl disable --now "$unit" 2>&1 | tail -1 || true
+    fi
+  done
+
+  # Wipe any drop-in dirs.
+  _clear_dropin "$inst" "render"
+  _clear_dropin "$inst" "upload"
+
+  systemctl daemon-reload
+  # Reset any failed state on the services so a subsequent add-slot with
+  # the same instance name starts from a clean slate.
+  systemctl reset-failed "tiktok-slot-render@${inst}.service" 2>/dev/null || true
+  systemctl reset-failed "tiktok-slot-upload@${inst}.service" 2>/dev/null || true
+  echo "$SELF: deleted slot ${inst}"
 }
 
 usage() {
   cat >&2 <<EOF
-Usage: sudo $SELF set-time <inst> <kind> <HH:MM|clear>
+Usage:
+  sudo $SELF set-time    <inst> <render|upload> <HH:MM|clear>
+  sudo $SELF add-slot    <inst> <render_HH:MM>  <upload_HH:MM>
+  sudo $SELF delete-slot <inst>
   <inst>  4-digit slot instance name (e.g. 0000, 1200)
-  <kind>  render | upload
-  <HH:MM> 00:00 .. 23:59 Madrid, or the literal word "clear"
+  <HH:MM> 00:00 .. 23:59 Madrid, or the literal word "clear" (set-time only)
 EOF
   exit 2
 }
@@ -137,6 +213,14 @@ case "$subcmd" in
   set-time)
     [[ $# -eq 3 ]] || usage
     cmd_set_time "$1" "$2" "$3"
+    ;;
+  add-slot)
+    [[ $# -eq 3 ]] || usage
+    cmd_add_slot "$1" "$2" "$3"
+    ;;
+  delete-slot)
+    [[ $# -eq 1 ]] || usage
+    cmd_delete_slot "$1"
     ;;
   *)
     usage

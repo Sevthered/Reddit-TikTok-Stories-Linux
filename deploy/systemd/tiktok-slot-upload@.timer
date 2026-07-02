@@ -1,0 +1,12 @@
+[Unit]
+Description=Upload trigger for slot %i (per-instance OnCalendar in .timer.d/override.conf)
+
+[Timer]
+# No OnCalendar here — see the sibling render template for the
+# rationale. Every enabled instance MUST have a drop-in at
+# /etc/systemd/system/tiktok-slot-upload@%i.timer.d/override.conf.
+Persistent=false
+Unit=tiktok-slot-upload@%i.service
+
+[Install]
+WantedBy=timers.target

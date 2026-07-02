@@ -20,7 +20,26 @@ CREATE TABLE IF NOT EXISTS config (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS slots (
+    instance     TEXT PRIMARY KEY,
+    render_time  TEXT NOT NULL,          -- HH:MM Madrid
+    upload_time  TEXT NOT NULL,          -- HH:MM Madrid
+    auto_approve INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
+
+
+# Seed rows for the `slots` table. Inserted only when the table is empty so
+# existing installs pick up the historical 2-slot cadence on first open.
+# Keeping the seed in-module (rather than importing from core.schedule) so
+# core/db.py stays free of upward dependencies.
+_SEED_SLOTS: list[tuple[str, str, str, int]] = [
+    # (instance, render_time, upload_time, auto_approve)
+    ("0000", "23:30", "00:00", 1),
+    ("1200", "11:30", "12:00", 0),
+]
 
 
 # Phase 6 columns added to `used` (idempotent additions guarded by
@@ -56,6 +75,17 @@ UPLOAD_POSTED_UNDER_REVIEW = "posted_under_review"
 UPLOAD_POSTED = "posted"
 UPLOAD_REJECTED = "rejected"
 UPLOAD_FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class SlotRow:
+    """One row of the `slots` table. Times are HH:MM strings in Madrid tz;
+    `auto_approve` is a bool (SQLite stores 0/1 but we coerce)."""
+    instance: str
+    render_time: str
+    upload_time: str
+    auto_approve: bool
+    created_at: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -126,6 +156,17 @@ class Db:
                 conn.execute(
                     "INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)",
                     (key, value),
+                )
+            # Seed slots on first-ever open. Idempotent: `INSERT OR IGNORE`
+            # only fires when the table is empty (or a specific seed row is
+            # missing). After the first open the operator can add/delete
+            # slots via the Schedule tab and this loop no-ops.
+            for inst, render_t, upload_t, auto in _SEED_SLOTS:
+                conn.execute(
+                    "INSERT OR IGNORE INTO slots "
+                    "(instance, render_time, upload_time, auto_approve) "
+                    "VALUES (?, ?, ?, ?)",
+                    (inst, render_t, upload_t, auto),
                 )
             yield cls(conn)
         finally:
@@ -477,3 +518,79 @@ class Db:
 
     def set_uploads_enabled(self, enabled: bool) -> None:
         self.set_config("uploads_enabled", "1" if enabled else "0")
+
+    # ------------ Slots (dynamic slot registry) ------------
+
+    def _slot_row(self, row: tuple) -> SlotRow:
+        return SlotRow(
+            instance=row[0],
+            render_time=row[1],
+            upload_time=row[2],
+            auto_approve=bool(row[3]),
+            created_at=row[4],
+        )
+
+    def list_slots(self) -> list[SlotRow]:
+        """All slots in the registry, sorted by instance name."""
+        cur = self._conn.execute(
+            "SELECT instance, render_time, upload_time, auto_approve, created_at "
+            "FROM slots ORDER BY instance"
+        )
+        return [self._slot_row(r) for r in cur.fetchall()]
+
+    def get_slot(self, instance: str) -> SlotRow | None:
+        cur = self._conn.execute(
+            "SELECT instance, render_time, upload_time, auto_approve, created_at "
+            "FROM slots WHERE instance = ?",
+            (instance,),
+        )
+        row = cur.fetchone()
+        return self._slot_row(row) if row else None
+
+    def add_slot(
+        self,
+        instance: str,
+        render_time: str,
+        upload_time: str,
+        auto_approve: bool = False,
+    ) -> SlotRow:
+        """Insert a new slot. Raises `sqlite3.IntegrityError` on duplicate
+        instance (`INSERT` not `INSERT OR IGNORE` — the caller must handle
+        collisions explicitly rather than silently no-op)."""
+        self._conn.execute(
+            "INSERT INTO slots (instance, render_time, upload_time, auto_approve) "
+            "VALUES (?, ?, ?, ?)",
+            (instance, render_time, upload_time, 1 if auto_approve else 0),
+        )
+        row = self.get_slot(instance)
+        assert row is not None
+        return row
+
+    def update_slot_times(
+        self, instance: str, render_time: str, upload_time: str
+    ) -> None:
+        """Update just the times. `auto_approve` stays in this row too
+        because behavior toggles have their own overrides via the
+        `config` table (see `core.schedule.set_override`)."""
+        self._conn.execute(
+            "UPDATE slots SET render_time = ?, upload_time = ? "
+            "WHERE instance = ?",
+            (render_time, upload_time, instance),
+        )
+
+    def update_slot_auto_approve(self, instance: str, auto_approve: bool) -> None:
+        """Update just `auto_approve`. Split from `update_slot_times` so the
+        Schedule tab can PUT a single field without re-sending the times."""
+        self._conn.execute(
+            "UPDATE slots SET auto_approve = ? WHERE instance = ?",
+            (1 if auto_approve else 0, instance),
+        )
+
+    def delete_slot(self, instance: str) -> None:
+        """Remove the slot row. Any `schedule.slot.<inst>.*` config
+        overrides are cleared separately by `core.schedule.delete_slot`
+        so callers can wire the DM-orphan-posts logic in the same
+        transaction."""
+        self._conn.execute(
+            "DELETE FROM slots WHERE instance = ?", (instance,)
+        )

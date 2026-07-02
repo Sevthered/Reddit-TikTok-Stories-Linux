@@ -1,47 +1,56 @@
 """Per-slot effective configuration.
 
-`SlotDefaults` mirrors what was previously hard-coded in
-`scripts/slot.py::SLOTS`. `EffectiveSlotCfg` is the merged view the
-runtime consumes — defaults with any per-key `schedule.slot.<inst>.*`
-override applied on top. Zero rows in the `config` table means the
-effective view is byte-identical to the pre-schedule-tab behavior; a
-delete of a key reverts it to the default.
+Runtime consumers (`scripts/slot.py`, `pipeline/upload_worker.py`,
+`webapp/backend/routers/schedule.py`) call `effective_slot_cfg(inst, db)`
+to get the merged view a slot's render / upload paths act on.
 
-Everything read here maps to a single DB config row so the webapp
-Schedule tab can round-trip values without touching TOML.
+Model:
+- `slots` table (`core/db.py::SlotRow`) is the source of truth for the
+  set of slots plus their `render_time` / `upload_time` / `auto_approve`.
+- Behavior + notification defaults are computed from a shared profile
+  keyed off `auto_approve` (see `defaults_for`) so an operator can add
+  a new interactive or auto-approve slot without having to seed a full
+  row of DB overrides.
+- `config` table k/v under `schedule.slot.<inst>.<field>` holds per-slot
+  overrides on top of those defaults; behavior toggles + notification
+  toggles round-trip through the Schedule tab this way.
 
-Docs / trigger to write this: [[improvements/schedule-tab]].
+Zero DB overrides + a slot's default profile = byte-identical to the
+pre-Schedule-tab behavior. Deleting a config row reverts a single field
+to the profile default.
+
+Docs / trigger for the redesign: [[improvements/schedule-tab]] +
+[[decisions/instrument-console-redesign]].
 """
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass
 from typing import Any
 
-from core.db import Db
+from core.db import Db, SlotRow
 
 log = logging.getLogger("core.schedule")
 
 
-# ---- Static defaults (previously scripts/slot.py::SLOTS) -----------------
+# ---- Static defaults ----------------------------------------------------
 
 
 @dataclass(frozen=True)
 class SlotDefaults:
-    """Hard-coded per-instance baseline. Preserved so the webapp can show
-    'default' vs 'override' and so a slot with no DB rows behaves exactly
-    as it did before the Schedule tab shipped."""
+    """The "factory defaults" for a slot with a given auto_approve profile.
+    Not per-instance any more; computed on demand from `defaults_for`."""
     publish_hour: int
-    render_time: str          # "HH:MM" Madrid — used by phase 3+ time editor
-    upload_time: str          # "HH:MM" Madrid
+    render_time: str          # HH:MM Madrid — mirrors slots.render_time
+    upload_time: str          # HH:MM Madrid — mirrors slots.upload_time
     auto_approve: bool
 
-    # Notification defaults per event. Post-da5ac9a matrix:
-    #  ✅ crash, ✅ approval_card (interactive only), ✅ force_approve
-    #  (interactive only), ✅ success, ✅ failure
-    #  🚫 empty (silenced by da5ac9a)
-    #  🚫 gate_reject (opt-in)
-    notify_render_pre: bool
+    render_enabled: bool = True
+    upload_enabled: bool = True
+
+    # Post-da5ac9a matrix. `notify_render_empty` + `notify_upload_gate_reject`
+    # default off; the rest depend on `auto_approve` (see defaults_for).
+    notify_render_pre: bool = True
     notify_render_crash: bool = True
     notify_render_empty: bool = False
     notify_upload_approval_card: bool = True
@@ -50,34 +59,37 @@ class SlotDefaults:
     notify_upload_failure: bool = True
     notify_upload_gate_reject: bool = False
 
-    render_enabled: bool = True
-    upload_enabled: bool = True
 
-
-# Mirrors the shape scripts/slot.py::SLOTS used before phase 1. The
-# render_time / upload_time strings match deploy/systemd/tiktok-slot-*.timer
-# `OnCalendar=` values so the eventual time editor round-trips cleanly.
-DEFAULT_SLOTS: dict[str, SlotDefaults] = {
-    "0000": SlotDefaults(
-        publish_hour=0,
-        render_time="23:30",
-        upload_time="00:00",
-        auto_approve=True,
-        notify_render_pre=False,
-        # 0000 is unattended: approval_card / force_approve never fire in
-        # code anyway (auto_approve short-circuits), but explicitly default
-        # them off so the webapp shows an intuitive picture.
-        notify_upload_approval_card=False,
-        notify_upload_force_approve=False,
-    ),
-    "1200": SlotDefaults(
-        publish_hour=12,
-        render_time="11:30",
-        upload_time="12:00",
+def defaults_for(
+    instance: str,
+    render_time: str,
+    upload_time: str,
+    auto_approve: bool,
+) -> SlotDefaults:
+    """Compute the SlotDefaults for a slot. Auto-approve slots suppress
+    pre-render + approval-card + force-approve DMs (they never fire in
+    code anyway when auto_approve is on); interactive slots keep them.
+    `publish_hour` is derived from `upload_time`."""
+    publish_hour = int(upload_time.split(":")[0])
+    if auto_approve:
+        return SlotDefaults(
+            publish_hour=publish_hour,
+            render_time=render_time,
+            upload_time=upload_time,
+            auto_approve=True,
+            notify_render_pre=False,
+            notify_upload_approval_card=False,
+            notify_upload_force_approve=False,
+        )
+    return SlotDefaults(
+        publish_hour=publish_hour,
+        render_time=render_time,
+        upload_time=upload_time,
         auto_approve=False,
         notify_render_pre=True,
-    ),
-}
+        notify_upload_approval_card=True,
+        notify_upload_force_approve=True,
+    )
 
 
 # ---- Effective view (defaults + DB overrides) ---------------------------
@@ -105,14 +117,12 @@ class EffectiveSlotCfg:
     notify_upload_gate_reject: bool
 
 
-# All keys the Schedule tab can override. Kept in one place so the router
-# and the merge helper agree on the wire format.
+# Overridable behavior + notification fields (times + auto_approve now live
+# in the slots table itself, not as config overrides). Order matches the
+# Schedule tab wire format.
 OVERRIDABLE_FIELDS: tuple[str, ...] = (
-    "render_time",
-    "upload_time",
     "render_enabled",
     "upload_enabled",
-    "auto_approve",
     "notify_render_pre",
     "notify_render_crash",
     "notify_render_empty",
@@ -123,13 +133,16 @@ OVERRIDABLE_FIELDS: tuple[str, ...] = (
     "notify_upload_gate_reject",
 )
 
-_BOOL_FIELDS: frozenset[str] = frozenset({
-    "render_enabled", "upload_enabled", "auto_approve",
-    "notify_render_pre", "notify_render_crash", "notify_render_empty",
-    "notify_upload_approval_card", "notify_upload_force_approve",
-    "notify_upload_success", "notify_upload_failure",
-    "notify_upload_gate_reject",
-})
+_BOOL_FIELDS: frozenset[str] = frozenset(OVERRIDABLE_FIELDS)
+
+
+# Fields exposed through the Schedule tab that live on the slot row itself
+# (updated via `core.db.Db.update_slot_*` rather than the config table).
+SLOT_ROW_FIELDS: tuple[str, ...] = (
+    "render_time",
+    "upload_time",
+    "auto_approve",
+)
 
 
 def config_key(instance: str, field_name: str) -> str:
@@ -139,10 +152,8 @@ def config_key(instance: str, field_name: str) -> str:
 
 
 def _coerce(field_name: str, raw: str) -> Any:
-    """Parse a raw DB string into the right Python type for the field."""
     if field_name in _BOOL_FIELDS:
         return raw == "1"
-    # render_time / upload_time stay as HH:MM strings — no coercion.
     return raw
 
 
@@ -153,21 +164,27 @@ def _serialize(field_name: str, value: Any) -> str:
 
 
 def known_instances(db: Db) -> list[str]:
-    """Which slots the runtime should schedule. Phase 1+2: static list from
-    DEFAULT_SLOTS. Phase 5 will make this discovery-based (DB slot table)."""
-    return sorted(DEFAULT_SLOTS.keys())
+    """Which slots the runtime should schedule. Reads from `slots` table."""
+    return [s.instance for s in db.list_slots()]
 
 
 def effective_slot_cfg(instance: str, db: Db) -> EffectiveSlotCfg:
-    """Merge `DEFAULT_SLOTS[instance]` with any DB overrides.
+    """Merge the slot row + defaults profile with per-slot DB overrides.
 
-    Raises `KeyError` if the instance is unknown — matches the previous
-    `SLOTS[instance]` lookup that would `KeyError` on typos.
-    """
-    if instance not in DEFAULT_SLOTS:
+    Raises `KeyError` if the instance is not in the slots table so the
+    argparse / router callers surface a clear error rather than a silent
+    fall-through to a fictitious default."""
+    row: SlotRow | None = db.get_slot(instance)
+    if row is None:
         raise KeyError(f"unknown slot instance {instance!r} — "
-                       f"known: {sorted(DEFAULT_SLOTS)}")
-    base = DEFAULT_SLOTS[instance]
+                       f"known: {known_instances(db)}")
+
+    base = defaults_for(
+        instance=instance,
+        render_time=row.render_time,
+        upload_time=row.upload_time,
+        auto_approve=row.auto_approve,
+    )
 
     merged: dict[str, Any] = asdict(base)
     for field_name in OVERRIDABLE_FIELDS:
@@ -200,12 +217,15 @@ def effective_slot_cfg(instance: str, db: Db) -> EffectiveSlotCfg:
 
 
 def set_override(db: Db, instance: str, field_name: str, value: Any | None) -> None:
-    """Write or clear a single override. `value=None` clears the row (revert
-    to default). Used by the webapp Schedule tab router."""
-    if instance not in DEFAULT_SLOTS:
+    """Write or clear a single behavior / notification override. `value=None`
+    clears the row (revert to default profile). Time + auto_approve edits
+    go through `core.db.Db.update_slot_*` instead — see the router."""
+    if db.get_slot(instance) is None:
         raise KeyError(f"unknown slot {instance!r}")
     if field_name not in OVERRIDABLE_FIELDS:
-        raise ValueError(f"field {field_name!r} is not overridable")
+        raise ValueError(f"field {field_name!r} is not overridable via "
+                         "config (times + auto_approve live on the slots "
+                         "row itself)")
     key = config_key(instance, field_name)
     if value is None:
         db.set_config(key, "")
@@ -214,15 +234,26 @@ def set_override(db: Db, instance: str, field_name: str, value: Any | None) -> N
 
 
 def clear_all_overrides(db: Db, instance: str) -> None:
-    """Reset a slot to its factory defaults. Iterates OVERRIDABLE_FIELDS
-    rather than scanning the config table so we can't nuke unrelated keys."""
+    """Reset a slot's behavior + notification config to defaults. Iterates
+    OVERRIDABLE_FIELDS rather than scanning the config table so we can't
+    accidentally nuke unrelated keys."""
     for field_name in OVERRIDABLE_FIELDS:
         db.set_config(config_key(instance, field_name), "")
 
 
+def delete_slot(db: Db, instance: str) -> None:
+    """Purge a slot: remove the slots row AND every `schedule.slot.<inst>.*`
+    config key. Does NOT touch systemd — the router owns the helper call
+    order (systemd cleanup happens before this, so if it fails the DB row
+    stays intact and the operator can retry)."""
+    clear_all_overrides(db, instance)
+    db.delete_slot(instance)
+
+
 __all__ = [
     "SlotDefaults", "EffectiveSlotCfg",
-    "DEFAULT_SLOTS", "OVERRIDABLE_FIELDS",
-    "config_key", "known_instances",
+    "OVERRIDABLE_FIELDS", "SLOT_ROW_FIELDS",
+    "config_key", "defaults_for", "known_instances",
     "effective_slot_cfg", "set_override", "clear_all_overrides",
+    "delete_slot",
 ]
