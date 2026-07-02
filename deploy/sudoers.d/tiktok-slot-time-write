@@ -1,0 +1,6 @@
+# Allow the `christian` user (webapp + bot runtime) to invoke the
+# root-owned schedule helper without a password. The helper validates
+# every argument and only touches /etc/systemd/system/tiktok-slot-*.timer.d/.
+# Installed by scripts/install_systemd.sh.
+Defaults!/usr/local/sbin/tiktok-slot-time-write !requiretty
+christian ALL=(root) NOPASSWD: /usr/local/sbin/tiktok-slot-time-write

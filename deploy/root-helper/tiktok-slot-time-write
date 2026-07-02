@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# tiktok-slot-time-write — root-owned helper for the webapp Schedule tab.
+#
+# Writes a per-instance systemd drop-in override for the render or upload
+# timer so the webapp can change fire times without gaining a general
+# root shell. Invoked as:
+#
+#   sudo /usr/local/sbin/tiktok-slot-time-write set-time <inst> <kind> <HH:MM|clear>
+#
+# Where:
+#   <inst>  is a 4-digit slot instance name (e.g. 0000, 1200)
+#   <kind>  is render | upload
+#   <HH:MM> is 00:00 .. 23:59 (Madrid) — writes a drop-in that sets
+#           `OnCalendar=*-*-* HH:MM:00 Europe/Madrid` on the timer
+#   clear   removes the drop-in dir entirely; the base .timer file's
+#           OnCalendar= is restored
+#
+# On write/clear the helper runs `daemon-reload` and restarts the
+# affected timer so the new schedule takes effect immediately.
+#
+# Every input is validated with anchored regex. The paths the helper
+# touches are constructed only from validated inputs. The sudoers
+# entry whitelists this exact path with NOPASSWD.
+
+set -euo pipefail
+
+readonly SELF="tiktok-slot-time-write"
+readonly SYSTEMD_DIR="/etc/systemd/system"
+
+die() { echo "$SELF: $*" >&2; exit 1; }
+
+require_root() {
+  if [[ $EUID -ne 0 ]]; then
+    die "must run as root (invoke via sudo)"
+  fi
+}
+
+# Validate the 4-digit instance name.
+validate_inst() {
+  local inst="$1"
+  [[ "$inst" =~ ^[0-9]{4}$ ]] || die "bad instance $inst (expected 4 digits)"
+}
+
+# Validate render|upload.
+validate_kind() {
+  local kind="$1"
+  case "$kind" in
+    render|upload) ;;
+    *) die "bad kind $kind (expected 'render' or 'upload')" ;;
+  esac
+}
+
+# Validate HH:MM. Accepts 00:00 .. 23:59.
+validate_hhmm() {
+  local hhmm="$1"
+  [[ "$hhmm" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]] \
+    || die "bad time $hhmm (expected HH:MM 00:00..23:59)"
+}
+
+cmd_set_time() {
+  local inst="$1" kind="$2" arg="$3"
+  validate_inst "$inst"
+  validate_kind "$kind"
+
+  local timer_unit="tiktok-slot-${kind}@${inst}.timer"
+  local dropin_dir="${SYSTEMD_DIR}/${timer_unit}.d"
+  local dropin_file="${dropin_dir}/override.conf"
+
+  # Base timer must exist — otherwise a rogue writer could plant a
+  # drop-in for a non-existent unit.
+  if [[ ! -f "${SYSTEMD_DIR}/${timer_unit}" ]]; then
+    die "base timer ${SYSTEMD_DIR}/${timer_unit} not found"
+  fi
+
+  if [[ "$arg" == "clear" ]]; then
+    # Guard rail: only remove drop-in dirs we own.
+    if [[ "$dropin_dir" != "${SYSTEMD_DIR}/tiktok-slot-"*.timer.d ]]; then
+      die "refusing to remove $dropin_dir (path did not pass sanity check)"
+    fi
+    rm -rf "$dropin_dir"
+    echo "$SELF: cleared drop-in for $timer_unit"
+  else
+    validate_hhmm "$arg"
+
+    install -d -m 0755 -o root -g root "$dropin_dir"
+
+    local tmp
+    tmp="$(mktemp "${dropin_dir}/override.XXXXXX")"
+    # `OnCalendar=` (empty first) resets the list, then the second line
+    # sets ours. This override style is documented under
+    # `systemd.timer(5)` — otherwise systemd merges lists across
+    # drop-ins and the base OnCalendar would still fire.
+    cat >"$tmp" <<EOF
+# Written by ${SELF} at $(date -u +%Y-%m-%dT%H:%M:%SZ) UTC
+# Overrides the base timer's OnCalendar= for slot ${inst} (${kind}).
+[Timer]
+OnCalendar=
+OnCalendar=*-*-* ${arg}:00 Europe/Madrid
+EOF
+    chmod 0644 "$tmp"
+    mv "$tmp" "$dropin_file"
+    echo "$SELF: wrote ${dropin_file} (OnCalendar=*-*-* ${arg}:00 Europe/Madrid)"
+  fi
+
+  systemctl daemon-reload
+  # Restart the timer so it picks up the new OnCalendar= immediately.
+  # Timer units are cheap to restart; the associated .service is not
+  # triggered by the restart itself (Requires= was stripped in
+  # commit 87025a3 to kill the daemon-reload cascade).
+  systemctl restart "$timer_unit"
+  echo "$SELF: reloaded + restarted $timer_unit"
+}
+
+usage() {
+  cat >&2 <<EOF
+Usage: sudo $SELF set-time <inst> <kind> <HH:MM|clear>
+  <inst>  4-digit slot instance name (e.g. 0000, 1200)
+  <kind>  render | upload
+  <HH:MM> 00:00 .. 23:59 Madrid, or the literal word "clear"
+EOF
+  exit 2
+}
+
+require_root
+
+if [[ $# -lt 1 ]]; then
+  usage
+fi
+
+subcmd="$1"; shift || true
+
+case "$subcmd" in
+  set-time)
+    [[ $# -eq 3 ]] || usage
+    cmd_set_time "$1" "$2" "$3"
+    ;;
+  *)
+    usage
+    ;;
+esac
