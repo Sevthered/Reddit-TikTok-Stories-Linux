@@ -4,7 +4,7 @@ Requires=tiktok-slot-render@0000.service
 
 [Timer]
 OnCalendar=*-*-* 23:30:00 Europe/Madrid
-Persistent=true
+Persistent=false
 Unit=tiktok-slot-render@0000.service
 
 [Install]

@@ -4,7 +4,7 @@ Requires=tiktok-slot-upload@1800.service
 
 [Timer]
 OnCalendar=*-*-* 18:00:00 Europe/Madrid
-Persistent=true
+Persistent=false
 Unit=tiktok-slot-upload@1800.service
 
 [Install]
