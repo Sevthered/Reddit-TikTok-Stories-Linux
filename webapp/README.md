@@ -1,8 +1,8 @@
 # Reddit → TikTok control plane
 
 FastAPI + SvelteKit + shadcn-svelte dashboard for the Reddit-story →
-TikTok pipeline. Runs on `127.0.0.1:8765`, side-by-side with the
-`com.sebastian.tiktok-bot` LaunchAgent.
+TikTok pipeline. Runs on `0.0.0.0:8765` (LAN-visible) under the
+`tiktok-webapp.service` systemd unit, alongside `tiktok-bot.service`.
 
 ## Layout
 
@@ -29,7 +29,7 @@ webapp/
 Terminal A — backend with dev host allowlist:
 
 ```
-WEBAPP_DEV=1 ./venv/bin/python -m uvicorn webapp.backend.app:app \
+WEBAPP_DEV=1 ./.venv/bin/python -m uvicorn webapp.backend.app:app \
   --host 127.0.0.1 --port 8765 --reload
 ```
 
@@ -45,28 +45,31 @@ Open http://localhost:5173/.
 ## Production (single process)
 
 The FastAPI app mounts the SvelteKit static build at `/`, so one uvicorn
-serves both the SPA and the API. This is what the `tiktok-webapp`
-LaunchAgent runs.
+serves both the SPA and the API. This is what `tiktok-webapp.service`
+runs.
 
 ```
 cd webapp/frontend && pnpm install --frozen-lockfile && pnpm build
-./venv/bin/python -m uvicorn webapp.backend.app:app --host 127.0.0.1 --port 8765
+./.venv/bin/python -m uvicorn webapp.backend.app:app --host 0.0.0.0 --port 8765
 ```
 
-Open http://127.0.0.1:8765/.
+Open http://<server-ip>:8765/.
 
-## LaunchAgent
+## systemd
 
 ```
-./scripts/install_launchd.sh install   # symlink plists + bootstrap
-./scripts/install_launchd.sh reload    # rebuild SPA + bootout + bootstrap
-./scripts/install_launchd.sh status
-./scripts/install_launchd.sh kickstart com.sebastian.tiktok-webapp
+sudo bash scripts/install_systemd.sh install     # copy units + polkit, enable + start
+sudo bash scripts/install_systemd.sh uninstall
+bash scripts/install_systemd.sh status
+bash scripts/install_systemd.sh kickstart tiktok-webapp
 ```
 
-The installer uses `launchctl bootstrap gui/$(id -u)` so agents run in
-the Aqua GUI session (required for Playwright headful renders and
-macOS Keychain prompts).
+The installer copies unit files to `/etc/systemd/system/` plus a scoped
+polkit rule to `/etc/polkit-1/rules.d/50-tiktok.rules` so the runtime
+user (`christian`) can drive `systemctl start/stop/restart tiktok-*`
+without sudo. Persistent services (`tiktok-xvfb`, `tiktok-webapp`,
+`tiktok-bot`) auto-start on boot; four render + four upload timers
+fire the 00:00 / 06:00 / 12:00 / 18:00 Europe/Madrid slot schedule.
 
 ## Endpoints
 
@@ -83,19 +86,22 @@ macOS Keychain prompts).
 | GET    | /api/config/{toml,env}            | read config                     |
 | PUT    | /api/config/toml                  | validate + atomic swap          |
 | PUT    | /api/config/env/{key}             | rewrite one env key             |
-| GET    | /api/logs/{name}/tail             | last N lines                    |
-| GET    | /api/logs/{name}/stream           | SSE follower (rotation-safe)    |
+| GET    | /api/logs/{name}/tail             | last N journald lines           |
+| GET    | /api/logs/{name}/stream           | SSE `journalctl -f` follower    |
 | GET    | /api/video/{id}, /api/cover/{id}  | inline artifact (206 Range)     |
-| POST   | /api/agents/{label}/{load,unload,kickstart} | launchctl in gui/uid  |
+| POST   | /api/agents/{label}/{load,unload,kickstart} | systemctl start/stop/restart |
 | GET    | /api/cookie/health                | sessionid days remaining        |
 
 ## Security posture
 
-Local-first. Threat model = other processes / browser pages on the same
-Mac; not remote attackers (127.0.0.1 bind rules them out).
+LAN-first. Threat model = other devices on the same LAN; not remote
+attackers (ufw allow-list restricts port 8765 to 10.0.0.0/8 +
+192.168.0.0/16).
 
-- `--host 127.0.0.1` — never listens on 0.0.0.0.
-- Host-header allowlist middleware — closes DNS-rebinding on loopback.
+- `--host 0.0.0.0` — LAN-visible; ufw is the real perimeter.
+- `WEBAPP_ALLOW_ANY_HOST=1` in the systemd unit disables the loopback
+  host-header allowlist (the DNS-rebinding threat model doesn't apply
+  once LAN clients need arbitrary Host headers).
 - SPA + API same-origin in prod; SvelteKit `csrf.checkOrigin` stays on.
 - Config editor validates every TOML edit against `core.config.load_config`
   before `os.replace` swaps the file, so a bad edit can't poison the
@@ -104,12 +110,12 @@ Mac; not remote attackers (127.0.0.1 bind rules them out).
   SECRET / KEY / etc.
 - Artifact routes resolve paths and reject anything outside
   `data/output/`.
-- Agents router whitelists three labels; the self-agent
-  (`com.sebastian.tiktok-webapp`) is intentionally excluded so a request
-  can't bootout the process handling it.
+- Agents router whitelists systemd units; the self-unit
+  (`tiktok-webapp.service`) is intentionally excluded so a request
+  can't stop the process handling it.
 
-Deferred: shared-token HttpOnly cookie for a second layer of defence
-when the port is ever forwarded. Not needed on local-only.
+Deferred: shared-token cookie / reverse proxy TLS if the port is ever
+forwarded beyond the LAN. Not needed on LAN-only.
 
 ## Environment overrides
 
@@ -118,6 +124,8 @@ when the port is ever forwarded. Not needed on local-only.
 | `WEBAPP_HOST`             | uvicorn bind                       | `127.0.0.1`    |
 | `WEBAPP_PORT`             | uvicorn port                       | `8765`         |
 | `WEBAPP_DEV`              | dev host allowlist + CORS + skip SPA mount | `0`    |
+| `WEBAPP_ALLOWED_HOSTS`    | comma-separated extra hostnames    | (empty)        |
+| `WEBAPP_ALLOW_ANY_HOST`   | disable host-header allowlist      | `0`            |
 | `TELEGRAM_BOT_TOKEN`      | required for review-caption edit   | (from .env)    |
 | `TELEGRAM_CHAT_ID`        | idem                               | (from .env)    |
-| `PLAYWRIGHT_BROWSERS_PATH`| exported to job subprocesses       | user cache dir |
+| `PLAYWRIGHT_BROWSERS_PATH`| exported to job subprocesses       | `.playwright/` |

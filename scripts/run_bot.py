@@ -1,8 +1,9 @@
 """Long-lived Telegram callback bot runner.
 
-Invoked by the `com.sebastian.tiktok-bot` LaunchAgent. Loops forever
+Invoked by the `tiktok-bot.service` systemd unit. Loops forever
 polling `getUpdates` and dispatching Approve/Reject taps + slash
-commands. On any uncaught crash, launchd's KeepAlive restarts us.
+commands. On any uncaught crash, systemd's `Restart=on-failure`
+restarts us.
 """
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ import logging
 import sys
 from pathlib import Path
 
-# Allow `python scripts/run_bot.py` (launchd invokes us that way).
+# Allow `python scripts/run_bot.py` (systemd invokes us that way).
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))

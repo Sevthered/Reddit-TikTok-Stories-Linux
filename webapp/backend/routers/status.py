@@ -22,7 +22,7 @@ router = APIRouter(tags=["status"])
 
 @router.get("/status", response_model=StatusOut)
 async def status(db: Db = Depends(get_db)) -> StatusOut:
-    # launchctl subprocess in a threadpool so we don't block the loop.
+    # systemctl subprocess in a threadpool so we don't block the loop.
     snapshot = await asyncio.to_thread(list_agent_status)
     agents = [
         AgentStatus(

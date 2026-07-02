@@ -106,7 +106,7 @@ def _parse_netscape_cookies(path: Path) -> list[dict]:
 
 def sessionid_expires_in_days(cookies_path: Path | str = _DEFAULT_COOKIES_PATH) -> float | None:
     """Return days until the `sessionid` cookie expires, or None if not found.
-    Called by the uploader + a daily launchd job to alert the user before
+    Called by the uploader + a daily systemd timer to alert the user before
     the jar goes stale (Q2 = auto-detect near-expiry, 3d before)."""
     path = Path(cookies_path)
     if not path.exists():

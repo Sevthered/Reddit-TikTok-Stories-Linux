@@ -1,9 +1,9 @@
 """FastAPI entry point for the dashboard.
 
 Run locally:
-    ./venv/bin/python -m uvicorn webapp.backend.app:app --reload
-Or under launchd (Phase 9):
-    ./venv/bin/python -m uvicorn webapp.backend.app:app --host 127.0.0.1 --port 8765
+    ./.venv/bin/python -m uvicorn webapp.backend.app:app --reload
+Or under the tiktok-webapp.service systemd unit:
+    ./.venv/bin/python -m uvicorn webapp.backend.app:app --host 0.0.0.0 --port 8765
 """
 from __future__ import annotations
 

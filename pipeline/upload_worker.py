@@ -1,16 +1,18 @@
 """One-shot upload worker for Phase 6.
 
-Designed to be invoked by launchd every 30 minutes inside the posting
-window (19:00-01:59 Europe/Madrid). Each invocation:
+Invoked by the tiktok-slot-upload@HHMM.service systemd oneshot at each
+scheduled publish minute (00/06/12/18 Europe/Madrid) with `--post-id`,
+or by hand for ad-hoc uploads. Each invocation:
 
   1. checks the gates (window, kill switch, cadence, spacing)
-  2. calls `db.claim_next_upload()` to atomically pick a row
+  2. calls `db.claim_next_upload()` (or `claim_specific_upload(post_id)`)
+     to atomically pick a row
   3. drives `upload_to_tiktok()` to actually post
   4. records success/failure back to the DB and pings Telegram
 
 Exit codes:
   0 : posted successfully (or nothing to do / gates closed — same OK exit
-      because we don't want launchd to treat idle ticks as errors)
+      because we don't want systemd to treat idle ticks as failed units)
   1 : upload attempted but failed (transient or terminal)
   2 : hard error (config, cookies missing, telegram env missing, etc.)
 """
@@ -24,9 +26,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-# Allow running as a script (`python pipeline/upload_worker.py`) — launchd
-# will invoke us that way. Without this, `from core.config import ...` fails
-# because the CWD isn't the project root by default.
+# Allow running as a script (`python pipeline/upload_worker.py`) — systemd
+# oneshot units invoke us that way. Without this, `from core.config import ...`
+# fails because the CWD isn't the project root by default.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
@@ -248,7 +250,7 @@ def run_once(*, force: bool = False, dry_run: bool = False,
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
-        description="One-shot Phase 6 upload worker (invoked by launchd)."
+        description="One-shot Phase 6 upload worker (invoked by systemd tiktok-slot-upload@ or by hand)."
     )
     p.add_argument("--force", action="store_true",
                    help="bypass window/cadence/spacing gates (still respects "

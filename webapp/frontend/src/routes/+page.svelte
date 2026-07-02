@@ -172,7 +172,7 @@
 			<Card.Content class="space-y-2">
 				{#if status}
 					{#each status.agents as a}
-						{@const self = a.label === 'com.sebastian.tiktok-webapp'}
+						{@const self = a.label === 'tiktok-webapp'}
 						<div class="flex items-center justify-between text-sm gap-3">
 							<span class="font-mono truncate">{a.label}</span>
 							<span class="flex items-center gap-2 shrink-0">
