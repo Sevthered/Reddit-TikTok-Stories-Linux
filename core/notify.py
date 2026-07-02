@@ -306,6 +306,10 @@ def _handle_callback(notifier: Notifier, db, query: dict[str, Any]) -> None:
         _handle_confirm_cb(notifier, msg_id, q_id, data)
         return
 
+    if data.startswith("web|"):
+        _handle_webapp_cb(notifier, msg_id, q_id, data)
+        return
+
     notifier.answer_callback(q_id, "unknown action", show_alert=True)
 
 
@@ -555,6 +559,139 @@ def _last_meaningful_line(tail: str) -> str:
     return "(no output)"
 
 
+_WEBAPP_UNIT = "tiktok-webapp.service"
+
+
+def _webapp_state() -> tuple[str, str, str]:
+    """Return (active_state, sub_state, listen_hint).
+
+    active_state ∈ {active, inactive, activating, deactivating, failed, ...}
+    sub_state    e.g. `running`, `dead`, `start-post`.
+    listen_hint  human-friendly URL if the process is up, "" otherwise.
+    """
+    import socket
+    import subprocess as _sp
+    try:
+        out = _sp.run(
+            ["systemctl", "show", _WEBAPP_UNIT,
+             "-p", "ActiveState", "-p", "SubState", "--no-page"],
+            capture_output=True, text=True, timeout=5,
+        )
+        fields = {}
+        for line in out.stdout.splitlines():
+            if "=" in line:
+                k, _, v = line.partition("=")
+                fields[k.strip()] = v.strip()
+        active = fields.get("ActiveState", "unknown")
+        sub = fields.get("SubState", "unknown")
+    except (_sp.TimeoutExpired, FileNotFoundError):
+        return "unknown", "unknown", ""
+
+    hint = ""
+    if active == "active":
+        try:
+            hint = f"http://{socket.gethostbyname(socket.gethostname())}:8765"
+        except OSError:
+            hint = "http://<server-ip>:8765"
+    return active, sub, hint
+
+
+def _webapp_action(action: str) -> tuple[int, str]:
+    """Run `systemctl <action> tiktok-webapp.service` (start|stop|restart).
+    Returns (exit_code, merged_output)."""
+    import subprocess as _sp
+    proc = _sp.run(
+        ["systemctl", action, _WEBAPP_UNIT],
+        capture_output=True, text=True, timeout=30,
+    )
+    return proc.returncode, (proc.stdout + proc.stderr).strip()
+
+
+def _webapp_keyboard(active_state: str) -> dict:
+    """Inline buttons: show Start when down, Stop when up. Always show Refresh."""
+    if active_state == "active":
+        rows = [[
+            {"text": "🔴 Stop", "callback_data": "web|stop"},
+            {"text": "🔄 Refresh", "callback_data": "web|refresh"},
+        ]]
+    else:
+        rows = [[
+            {"text": "🟢 Start", "callback_data": "web|start"},
+            {"text": "🔄 Refresh", "callback_data": "web|refresh"},
+        ]]
+    return {"inline_keyboard": rows}
+
+
+def _webapp_status_text(active_state: str, sub_state: str, hint: str) -> str:
+    emoji = {"active": "🟢", "inactive": "⚫️", "failed": "🔴"}.get(active_state, "⚪️")
+    lines = [f"🌐 <b>Web app</b>: {emoji} <code>{_html_escape(active_state)}</code> "
+             f"(<code>{_html_escape(sub_state)}</code>)"]
+    if hint:
+        lines.append(f"→ <a href=\"{hint}\">{hint}</a>")
+    return "\n".join(lines)
+
+
+def _handle_webapp_cmd(notifier: Notifier, text: str) -> None:
+    """Handle `/webapp`, `/webapp on`, `/webapp off` slash commands."""
+    parts = text.split()
+    arg = parts[1].lower() if len(parts) > 1 else ""
+
+    if arg in ("on", "up", "start"):
+        rc, out = _webapp_action("start")
+        if rc != 0:
+            notifier.send_text(f"❌ start failed (exit={rc}):\n<pre>{_html_escape(out[:400])}</pre>",
+                               parse_mode="HTML")
+            return
+    elif arg in ("off", "down", "stop"):
+        rc, out = _webapp_action("stop")
+        if rc != 0:
+            notifier.send_text(f"❌ stop failed (exit={rc}):\n<pre>{_html_escape(out[:400])}</pre>",
+                               parse_mode="HTML")
+            return
+    elif arg in ("restart", "kickstart"):
+        rc, out = _webapp_action("restart")
+        if rc != 0:
+            notifier.send_text(f"❌ restart failed (exit={rc}):\n<pre>{_html_escape(out[:400])}</pre>",
+                               parse_mode="HTML")
+            return
+    elif arg not in ("", "status"):
+        notifier.send_text("usage: /webapp [on|off|restart|status]")
+        return
+
+    active, sub, hint = _webapp_state()
+    notifier.send_text_with_markup(
+        _webapp_status_text(active, sub, hint),
+        _webapp_keyboard(active),
+        parse_mode="HTML",
+    )
+
+
+def _handle_webapp_cb(notifier: Notifier, msg_id: int, q_id: str, data: str) -> None:
+    """Inline-button dispatch for the /webapp status card."""
+    action = data.split("|", 1)[1] if "|" in data else ""
+    if action == "start":
+        rc, out = _webapp_action("start")
+        notifier.answer_callback(q_id, "starting" if rc == 0 else f"exit {rc}")
+    elif action == "stop":
+        rc, out = _webapp_action("stop")
+        notifier.answer_callback(q_id, "stopping" if rc == 0 else f"exit {rc}")
+    elif action == "refresh":
+        notifier.answer_callback(q_id)
+    else:
+        notifier.answer_callback(q_id, "unknown action", show_alert=True)
+        return
+
+    # Give systemd ~800ms to settle then repaint.
+    time.sleep(0.8)
+    active, sub, hint = _webapp_state()
+    notifier.edit_message_text(
+        msg_id,
+        _webapp_status_text(active, sub, hint),
+        reply_markup=_webapp_keyboard(active),
+        parse_mode="HTML",
+    )
+
+
 def _handle_message(notifier: Notifier, db, msg: dict[str, Any]) -> None:
     from core import tg_flows
     from core.agents import list_agent_status
@@ -636,9 +773,12 @@ def _handle_message(notifier: Notifier, db, msg: dict[str, Any]) -> None:
             tg_flows.confirm_text(False), tg_flows.confirm_keyboard(False),
         )
 
+    elif cmd == "/webapp":
+        _handle_webapp_cmd(notifier, text)
+
     else:
         notifier.send_text(
-            "commands: /menu /render /upload /confirm /status /queue /pause /resume"
+            "commands: /menu /render /upload /confirm /status /queue /pause /resume /webapp"
         )
 
 
