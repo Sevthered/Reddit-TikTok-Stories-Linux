@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TikTok OAuth callback</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font: 15px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; color: #111; }
+  h1 { margin: 0 0 20px; font-size: 20px; }
+  .code, .state, .err { display: block; padding: 12px 14px; margin: 10px 0; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; word-break: break-all; user-select: all; }
+  .code { background: #eef7ee; border: 1px solid #b7e0b7; }
+  .state { background: #f0f4ff; border: 1px solid #bcd0f5; }
+  .err { background: #fdecea; border: 1px solid #f5b7b1; color: #7a1f1f; }
+  button { padding: 8px 14px; margin-top: 8px; font: inherit; cursor: pointer; }
+  .hint { color: #666; font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>TikTok OAuth callback</h1>
+<div id="out"></div>
+<p class="hint">Copy the <b>code</b> string above and paste it into the terminal running <code>tiktok_oauth.py</code>. Codes expire within ~5 minutes.</p>
+<script>
+(function () {
+  var q = new URLSearchParams(window.location.search);
+  var code = q.get("code");
+  var state = q.get("state");
+  var err = q.get("error") || q.get("error_description");
+  var out = document.getElementById("out");
+  if (err) {
+    var e = document.createElement("div");
+    e.className = "err";
+    e.textContent = "error: " + err;
+    out.appendChild(e);
+    return;
+  }
+  if (code) {
+    var c = document.createElement("div");
+    c.className = "code";
+    c.textContent = code;
+    out.appendChild(c);
+    var b = document.createElement("button");
+    b.textContent = "Copy code";
+    b.onclick = function () { navigator.clipboard.writeText(code); b.textContent = "Copied"; };
+    out.appendChild(b);
+  }
+  if (state) {
+    var s = document.createElement("div");
+    s.className = "state";
+    s.textContent = "state: " + state;
+    out.appendChild(s);
+  }
+  if (!code && !err) {
+    var m = document.createElement("div");
+    m.className = "err";
+    m.textContent = "No code or error in URL. Something went wrong.";
+    out.appendChild(m);
+  }
+})();
+</script>
+</body>
+</html>
