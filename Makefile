@@ -19,7 +19,7 @@ FRONT      := $(REPO)/webapp/frontend
 INSTALL_SH := $(REPO)/scripts/install_systemd.sh
 
 PERSISTENT := tiktok-xvfb tiktok-bot
-TIMERS     := tiktok-confirm.timer tiktok-retention.timer \
+TIMERS     := tiktok-confirm.timer tiktok-retention.timer tiktok-secrets-backup.timer \
               tiktok-slot-render@0000.timer tiktok-slot-upload@0000.timer \
               tiktok-slot-render@1200.timer tiktok-slot-upload@1200.timer
 ALL_UNITS  := $(addsuffix .service,$(PERSISTENT)) tiktok-webapp.service $(TIMERS)
@@ -31,7 +31,7 @@ ALL_UNITS  := $(addsuffix .service,$(PERSISTENT)) tiktok-webapp.service $(TIMERS
         kickstart-webapp kickstart-bot kickstart-upload kickstart-confirm \
         logs logs-webapp logs-bot logs-upload logs-confirm logs-xvfb \
         deps deps-py deps-node clean-logs doctor \
-        db-upgrade db-revision
+        db-upgrade db-revision secrets-backup
 
 help:
 	@echo "Automated-TikTok-Upload — make targets"
@@ -46,6 +46,7 @@ help:
 	@echo "    make reload           restart bot"
 	@echo "    make status           unit + timer state"
 	@echo "    make security         systemd-analyze security, all units (R3.2)"
+	@echo "    make secrets-backup   trigger the nightly age+rclone backup now (task #7)"
 	@echo "    make kickstart-<svc>  restart one (webapp|bot|upload|confirm)"
 	@echo ""
 	@echo "  DB migrations (Alembic, task #4):"
@@ -113,6 +114,9 @@ status:
 
 security:
 	@bash $(INSTALL_SH) security
+
+secrets-backup:
+	@systemctl start tiktok-secrets-backup.service && systemctl --no-pager status tiktok-secrets-backup.service | head -8
 
 # ---- db migrations (Alembic, task #4/#16) ------------------------------
 

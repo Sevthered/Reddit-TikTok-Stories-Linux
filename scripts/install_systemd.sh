@@ -36,6 +36,7 @@ PERSISTENT=(tiktok-xvfb tiktok-bot)
 TIMERS=(
   tiktok-confirm.timer
   tiktok-retention.timer
+  tiktok-secrets-backup.timer
 )
 
 # Default seed slots — mirrors core/db.py::_SEED_SLOTS. Only used by
@@ -46,7 +47,7 @@ SEED_SLOTS=(
   "1200:11:30:12:00"
 )
 
-# All 9 service units, for `systemd-analyze security` (R3.2). Templated
+# All 10 service units, for `systemd-analyze security` (R3.2). Templated
 # units need a concrete instance name — 0000 is always seeded; `x` is an
 # arbitrary notify@ instance since it takes an argument, not a time.
 UNITS_SECURITY=(
@@ -59,6 +60,7 @@ UNITS_SECURITY=(
   "tiktok-slot-render@0000.service"
   "tiktok-slot-upload@0000.service"
   tiktok-upload.service
+  tiktok-secrets-backup.service
 )
 
 need_root() {
