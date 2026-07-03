@@ -6,6 +6,10 @@ data
 .venv
 node_modules
 webapp/frontend/node_modules
+webapp/frontend/src
+webapp/frontend/.svelte-kit
+webapp/frontend/.vscode
+webapp/frontend/static
 .playwright
 .chromium-home
 logs

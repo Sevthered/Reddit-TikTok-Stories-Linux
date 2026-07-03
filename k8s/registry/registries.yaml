@@ -1,0 +1,11 @@
+# k3s containerd registry config — trust the in-cluster HTTP registry.
+# Goes to /etc/rancher/k3s/registries.yaml on EACH node, then `systemctl
+# restart k3s` (server) / `k3s-agent` (agent). Tells containerd to pull from
+# 10.10.10.21:5000 over plain HTTP (internal LAN, no TLS yet).
+#
+# TLS + auth for the registry is a deferred follow-up (task #28); when added,
+# replace this with a `configs:` block (tls + auth) instead of the http mirror.
+mirrors:
+  "10.10.10.21:5000":
+    endpoint:
+      - "http://10.10.10.21:5000"

@@ -3,23 +3,17 @@
 # (webapp/bot Deployments + render/upload/confirm CronJobs) with different
 # commands — this image bakes CODE + DEPS only; data/config/secrets come from
 # PVCs + Secrets at runtime.
+#
+# NOTE: the SvelteKit SPA is copied PRE-BUILT from webapp/frontend/build/ (the
+# same artifact the systemd deploy serves; built via `make build-spa`/pnpm).
+# Building the SPA in-image is a future improvement — the repo currently has no
+# committed svelte.config, so an in-container `pnpm build` can't reproduce it
+# from a clean clone. The build/ dir must be present in the build context.
 
-# ---- Stage 1: build the SvelteKit static SPA ----
-FROM node:22-slim AS spa
-WORKDIR /spa
-RUN npm install -g pnpm
-# Install deps first (cache layer), then build.
-COPY webapp/frontend/package.json webapp/frontend/pnpm-lock.yaml webapp/frontend/.npmrc ./
-RUN pnpm install --frozen-lockfile
-COPY webapp/frontend/ ./
-RUN pnpm build
-# → /spa/build (adapter-static, index.html fallback)
-
-# ---- Stage 2: runtime ----
 # Playwright image matched to playwright==1.61.0: ships Chromium
 # (Chrome-for-Testing) + all browser OS deps + Xvfb, and a non-root `pwuser`
 # (Chromium is launched WITHOUT --no-sandbox, so we MUST run non-root).
-FROM mcr.microsoft.com/playwright/python:v1.61.0-noble AS runtime
+FROM mcr.microsoft.com/playwright/python:v1.61.0-noble
 
 # System ffmpeg (core/ffmpeg.py resolves it via shutil.which).
 USER root
@@ -39,22 +33,18 @@ RUN pip install --no-cache-dir -r requirements.txt \
 # App code (NOT data/, config runtime state, secrets — those mount at runtime).
 COPY core/ ./core/
 COPY pipeline/ ./pipeline/
-COPY webapp/ ./webapp/
 COPY scripts/ ./scripts/
 COPY assets/ ./assets/
 COPY alembic/ ./alembic/
+COPY webapp/ ./webapp/
 COPY alembic.ini main.py pyproject.toml config.toml ./
-
-# Built SPA from stage 1 → where FastAPI serves it (settings.FRONTEND_BUILD_DIR).
-COPY --from=spa /spa/build ./webapp/frontend/build
 
 ENV TZ=Europe/Madrid \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
 # Chromium sandbox requires non-root; pwuser's HOME (/home/pwuser) is writable
-# so the crashpad-handler DB path resolves (the systemd HOME-redirect bug does
-# not apply here — nothing makes $HOME inaccessible in the container).
+# so the crashpad-handler DB path resolves.
 RUN chown -R pwuser:pwuser /app
 USER pwuser
 
