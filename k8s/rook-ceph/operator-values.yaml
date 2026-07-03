@@ -1,0 +1,25 @@
+# Rook-Ceph OPERATOR chart values — k8s-migration Phase 3
+# Chart: rook-release/rook-ceph, pinned v1.20.1
+# The operator is the controller that creates/manages all Ceph daemons from
+# our CRs. Mostly chart defaults; CRDs + CSI drivers install by default.
+
+# Modest footprint for the operator pod itself (it's a controller, not a
+# data-path component).
+resources:
+  requests:
+    cpu: 200m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# No Prometheus in the cluster yet (Phase 4) — don't create ServiceMonitors.
+monitoring:
+  enabled: false
+
+# CSI driver via the ceph-csi-operator (Rook 1.20's only helm-supported CSI —
+# classic embedded CSI was removed from the chart in this version, so this
+# MUST stay true). The Rook operator sets up CephConnection/ClientProfile/CSI
+# secrets; the ceph-csi-operator subchart then deploys the RBD/CephFS
+# provisioner + node plugins from Driver CRs.
+csi:
+  installCsiOperator: true

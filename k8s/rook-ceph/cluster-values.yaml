@@ -1,0 +1,82 @@
+# Rook-Ceph CLUSTER chart values — k8s-migration Phase 3
+# Chart: rook-release/rook-ceph-cluster, pinned v1.20.1
+# Deployed into namespace rook-ceph (operator is there too).
+#
+# Design: 3 servers, 1 OSD each on raw sda3, replica 3, failure-domain=host.
+# Tuned hard for 15GB nodes. Block storage first; CephFS + RGW added later
+# via `helm upgrade` (see cephFileSystems/cephObjectStores at the bottom).
+
+operatorNamespace: rook-ceph
+
+# The Ceph debugging/admin pod ("toolbox") — lets us run `ceph -s` etc.
+toolbox:
+  enabled: true
+
+cephClusterSpec:
+  mon:
+    count: 3            # odd → quorum, one per node
+  mgr:
+    count: 2            # 1 active + 1 standby
+
+  dashboard:
+    enabled: true
+    ssl: true
+
+  # Ceph config applied by the operator (via `ceph config set`).
+  # CRITICAL tuning for small nodes: cap the OSD memory target so a 3Gi k8s
+  # limit isn't exceeded (default target is 4Gi → would OOM). Throttle
+  # recovery/backfill so rebalancing never starves the node.
+  cephConfig:
+    osd:
+      osd_memory_target: "2147483648"   # 2 GiB
+      osd_max_backfills: "1"
+      osd_recovery_max_active: "1"
+
+  # EXPLICIT, SAFE device selection — never let Ceph auto-grab disks.
+  # Only sda3 on the 3 named nodes is ever touched; sda/sda1/sda2 (the OS)
+  # are untouchable.
+  storage:
+    useAllNodes: false
+    useAllDevices: false
+    nodes:
+      - name: "mk8s-01"
+        devices:
+          - name: "sda3"
+      - name: "mk8s-02"
+        devices:
+          - name: "sda3"
+      - name: "mk8s-03"
+        devices:
+          - name: "sda3"
+
+  # Per-daemon resource envelopes sized for 15GB nodes (chart defaults are
+  # osd 4Gi / mon 2Gi — far too heavy here).
+  resources:
+    osd:
+      requests:
+        cpu: "500m"
+        memory: "2Gi"
+      limits:
+        memory: "3Gi"       # osd_memory_target (2Gi) + 1Gi headroom
+    mon:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        memory: "1Gi"
+    mgr:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        memory: "1Gi"
+
+# Block storage (RBD) — chart default is already exactly our design
+# (name ceph-blockpool, failureDomain host, replica 3, StorageClass
+# ceph-block as cluster default). Left to inherit chart defaults.
+
+# CephFS (RWX) and object store (S3) start DISABLED — added incrementally in
+# Phase 3 Steps 5 & 6 via `helm upgrade` after block storage is verified
+# healthy (teaching: bring one thing up at a time, isolate failures).
+cephFileSystems: []
+cephObjectStores: []
