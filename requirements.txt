@@ -37,5 +37,9 @@ fastapi-csrf-protect==1.0.7   # double-submit CSRF (P0.1, research run 3 + 7)
 slowapi==0.1.10               # rate limiting keyed on CF-Connecting-IP (P0.2, research run 3 + 7)
 pyjwt[crypto]==2.13.0         # verify Cf-Access-Jwt-Assertion server-side (R2.4, research run 3 + 7)
 
+# DB migrations (task #4/#16, research run 4 -- sqlite-migrations-backup-litestream-2026)
+sqlalchemy==2.0.51            # Alembic's dependency -- no ORM models used, see alembic/env.py
+alembic==1.18.5               # batch mode for SQLite ALTER TABLE; migrations hand-authored, no autogenerate
+
 # Deferred — uncomment as later phases land:
 # kokoro==0.7.16           # Phase 2 (offline TTS fallback)

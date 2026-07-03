@@ -32,7 +32,8 @@ ALL_UNITS  := $(addsuffix .service,$(PERSISTENT)) tiktok-webapp.service $(TIMERS
         dev dev-webapp dev-bot dev-frontend \
         kickstart-webapp kickstart-bot kickstart-upload kickstart-confirm \
         logs logs-webapp logs-bot logs-upload logs-confirm logs-xvfb \
-        deps deps-py deps-node clean-logs doctor
+        deps deps-py deps-node clean-logs doctor \
+        db-upgrade db-revision
 
 help:
 	@echo "Automated-TikTok-Upload — make targets"
@@ -48,6 +49,10 @@ help:
 	@echo "    make status           unit + timer state"
 	@echo "    make security         systemd-analyze security, all units (R3.2)"
 	@echo "    make kickstart-<svc>  restart one (webapp|bot|upload|confirm)"
+	@echo ""
+	@echo "  DB migrations (Alembic, task #4):"
+	@echo "    make db-upgrade              apply pending migrations"
+	@echo "    make db-revision msg=\"...\"   new hand-authored migration script"
 	@echo ""
 	@echo "  Webapp (off-by-default; run on demand while SSH'd in):"
 	@echo "    make web-up           start tiktok-webapp on 0.0.0.0:8765"
@@ -110,6 +115,15 @@ status:
 
 security:
 	@bash $(INSTALL_SH) security
+
+# ---- db migrations (Alembic, task #4/#16) ------------------------------
+
+db-upgrade:
+	@$(PY) -m alembic upgrade head
+
+db-revision:
+	@test -n "$(msg)" || (echo "usage: make db-revision msg=\"description\""; exit 2)
+	@$(PY) -m alembic revision -m "$(msg)"
 
 kickstart-webapp:  ; @bash $(INSTALL_SH) kickstart tiktok-webapp
 kickstart-bot:     ; @bash $(INSTALL_SH) kickstart tiktok-bot
