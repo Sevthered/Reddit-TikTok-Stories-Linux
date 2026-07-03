@@ -1,0 +1,21 @@
+[Unit]
+Description=Weekly Lynis system security audit
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/lynis audit system --cronjob --quiet
+StandardOutput=journal
+StandardError=journal
+
+# Deliberately no hardening directives and no OnFailure=notify@ here,
+# unlike every other unit in this repo -- see
+# wiki/decisions/2026-07-03-lynis-periodic-audit.md.
+# Runs as root (no User=): a real Lynis audit needs broad read access
+# across the whole system to do its job; ProtectSystem/ProtectHome/etc.
+# would hide exactly what it's meant to inspect. Its exit code is not a
+# "something's wrong" signal (verified empirically: exit 0 with warnings
+# present) -- it's an audit tool surfacing findings, not a CI gate, so it
+# isn't wired to the Telegram failure-notify pattern used elsewhere.
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=64

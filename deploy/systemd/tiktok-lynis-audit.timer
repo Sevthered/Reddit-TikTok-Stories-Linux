@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly trigger for the Lynis security audit
+
+[Timer]
+OnCalendar=Sun *-*-* 04:00:00 Europe/Madrid
+Persistent=true
+Unit=tiktok-lynis-audit.service
+
+[Install]
+WantedBy=timers.target

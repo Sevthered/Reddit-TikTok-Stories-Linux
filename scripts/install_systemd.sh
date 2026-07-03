@@ -37,6 +37,7 @@ TIMERS=(
   tiktok-confirm.timer
   tiktok-retention.timer
   tiktok-secrets-backup.timer
+  tiktok-lynis-audit.timer
 )
 
 # Default seed slots — mirrors core/db.py::_SEED_SLOTS. Only used by
