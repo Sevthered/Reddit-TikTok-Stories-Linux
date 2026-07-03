@@ -19,3 +19,24 @@ TimeoutStartSec=30min
 ExecStart=/srv/tiktok/app/.venv/bin/python -u scripts/slot.py render --instance %i
 StandardOutput=journal
 StandardError=journal
+
+# Hardening (P0.5, research run 7). ProtectSystem=full (not strict) --
+# Chromium/ffmpeg need filesystem flexibility strict would block, and
+# the app dir stays normally writable under full (only /usr,/boot,/etc
+# go read-only), so no explicit ReadWritePaths needed here. Deliberately
+# NO PrivateTmp -- Playwright connects to Xvfb over the /tmp/.X11-unix/X99
+# unix socket; an isolated private /tmp would hide that socket and break
+# every headed-browser render/upload. NOT adding MemoryDenyWriteExecute
+# or SystemCallFilter -- both need real testing against Chromium/ffmpeg
+# before enabling (research run 7), not assumed safe here.
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=

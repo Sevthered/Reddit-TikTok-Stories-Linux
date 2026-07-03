@@ -18,3 +18,18 @@ Environment=PLAYWRIGHT_BROWSERS_PATH=/srv/tiktok/app/.playwright
 ExecStart=/srv/tiktok/app/.venv/bin/python -u pipeline/upload_worker.py
 StandardOutput=journal
 StandardError=journal
+
+# Hardening (P0.5, research run 7). Legacy unit (superseded by
+# tiktok-slot-upload@, kept for consistency) -- same reasoning as that
+# unit: ProtectSystem=full, no PrivateTmp (X11 socket visibility).
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=

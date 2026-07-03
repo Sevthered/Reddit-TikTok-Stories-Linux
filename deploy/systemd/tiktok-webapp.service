@@ -20,5 +20,24 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
+# Hardening (P0.5, research run 7). ProtectSystem=strict locks the
+# whole filesystem read-only except the paths below: the repo root
+# (config.toml's atomic-write-via-tempfile pattern creates the temp
+# file in its parent dir, so the dir must be writable, not just the
+# file) and /etc/tiktok (the dashboard's env-editor UI writes there).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+ReadWritePaths=/srv/tiktok/app /etc/tiktok
+
 [Install]
 WantedBy=multi-user.target

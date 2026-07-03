@@ -13,5 +13,23 @@ RestartSec=2
 StandardOutput=journal
 StandardError=journal
 
+# Hardening (P0.5, research run 7). Can be the strictest unit in the
+# fleet: no app-dir access at all, `-nolisten tcp` means no network
+# needed either -- only a unix socket for the X11 render/upload units
+# to connect to. Deliberately NO PrivateTmp (same reason as
+# render/upload/upload-legacy): the /tmp/.X11-unix/X99 socket this
+# service creates must stay visible to those units' real /tmp.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=
+
 [Install]
 WantedBy=multi-user.target

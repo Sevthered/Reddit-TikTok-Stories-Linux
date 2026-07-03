@@ -12,3 +12,19 @@ Environment=PYTHONUNBUFFERED=1
 ExecStart=/srv/tiktok/app/.venv/bin/python -u -m pipeline.retention
 StandardOutput=journal
 StandardError=journal
+
+# Hardening (P0.5, research run 7). Pure local file/DB cleanup, no
+# network calls at all — restricted to AF_UNIX only.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=
+ReadWritePaths=/srv/tiktok/app/data

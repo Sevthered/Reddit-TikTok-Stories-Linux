@@ -18,3 +18,19 @@ TimeoutStartSec=15min
 ExecStart=/srv/tiktok/app/.venv/bin/python -u scripts/slot.py upload --instance %i
 StandardOutput=journal
 StandardError=journal
+
+# Hardening (P0.5, research run 7). Same reasoning as
+# tiktok-slot-render@.service -- ProtectSystem=full, no PrivateTmp
+# (Playwright needs the /tmp/.X11-unix/X99 socket from Xvfb visible),
+# no MemoryDenyWriteExecute/SystemCallFilter without dedicated testing.
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
