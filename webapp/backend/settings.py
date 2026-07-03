@@ -20,7 +20,20 @@ REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
 DB_PATH: Path = REPO_ROOT / "data" / "used_stories.db"
 CONFIG_PATH: Path = REPO_ROOT / "config.toml"
-ENV_PATH: Path = REPO_ROOT / ".env"
+
+# Secrets file (P0.4, research run 7): prod points this at
+# /etc/tiktok/environment (same file systemd's EnvironmentFile= loads
+# into every unit) — outside the git working directory, so a repo
+# backup/tarball/future release-dir deploy can't accidentally capture
+# it. Falls back to the repo-local .env for local dev where that path
+# doesn't exist. WEBAPP_ENV_PATH overrides explicitly if ever needed.
+_PROD_ENV_PATH = Path("/etc/tiktok/environment")
+_env_path_override = os.environ.get("WEBAPP_ENV_PATH", "")
+ENV_PATH: Path = (
+    Path(_env_path_override) if _env_path_override
+    else _PROD_ENV_PATH if _PROD_ENV_PATH.exists()
+    else REPO_ROOT / ".env"
+)
 LOGS_DIR: Path = REPO_ROOT / "data" / "logs"
 OUTPUT_DIR: Path = REPO_ROOT / "data" / "output"
 COOKIES_PATH: Path = REPO_ROOT / "data" / "cookies" / "tiktok_cookies.txt"

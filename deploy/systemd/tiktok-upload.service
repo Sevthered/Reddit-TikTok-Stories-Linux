@@ -9,7 +9,7 @@ Type=oneshot
 User=christian
 Group=christian
 WorkingDirectory=/srv/tiktok/app
-EnvironmentFile=/srv/tiktok/app/.env
+EnvironmentFile=/etc/tiktok/environment
 Environment=DISPLAY=:99
 Environment=TZ=Europe/Madrid
 Environment=PYTHONUNBUFFERED=1

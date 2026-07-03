@@ -128,19 +128,35 @@ def _require(d: dict, key: str, section: str):
     return d[key]
 
 
-def _load_dotenv(path: str | Path = ".env") -> None:
-    p = Path(path)
-    if not p.exists():
-        return
-    for line in p.read_text(encoding="utf-8").splitlines():
-        s = line.strip()
-        if not s or s.startswith("#") or "=" not in s:
+# Canonical prod secrets location (P0.4, research run 7): "never place
+# secrets inside the application repository." Every systemd unit's
+# EnvironmentFile= already points here in prod, so by the time any of
+# these scripts run under systemd this file is a no-op (its values are
+# already in os.environ). It only matters for a manual/interactive run
+# (SSH session, local dev) with no systemd env injection.
+_PROD_ENV_PATH = Path("/etc/tiktok/environment")
+
+
+def _load_dotenv(path: str | Path | None = None) -> None:
+    """Fill in any os.environ keys missing so far from a dotenv-style
+    file. Never overrides an already-set variable — safe to call after
+    systemd's EnvironmentFile= has already populated the environment.
+
+    With no explicit path, tries the prod secrets location first, then
+    falls back to `.env` in the current directory (local dev)."""
+    candidates = [Path(path)] if path is not None else [_PROD_ENV_PATH, Path(".env")]
+    for p in candidates:
+        if not p.exists():
             continue
-        k, _, v = s.partition("=")
-        k = k.strip()
-        v = v.strip().strip('"').strip("'")
-        if k and k not in os.environ:
-            os.environ[k] = v
+        for line in p.read_text(encoding="utf-8").splitlines():
+            s = line.strip()
+            if not s or s.startswith("#") or "=" not in s:
+                continue
+            k, _, v = s.partition("=")
+            k = k.strip()
+            v = v.strip().strip('"').strip("'")
+            if k and k not in os.environ:
+                os.environ[k] = v
 
 
 def load_config(path: str | Path = "config.toml") -> Config:

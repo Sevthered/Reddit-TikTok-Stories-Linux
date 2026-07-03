@@ -90,6 +90,10 @@ def exchange_code(client_key: str, client_secret: str, code: str, redirect_uri: 
 
 
 def main() -> int:
+    # Prod secrets live at /etc/tiktok/environment (P0.4); fall back to
+    # the repo-local .env for local dev. _load_dotenv() never overrides
+    # an already-set var, so calling both in order is safe.
+    _load_dotenv(Path("/etc/tiktok/environment"))
     _load_dotenv(_ROOT / ".env")
 
     client_key = _env("TIKTOK_CLIENT_KEY")

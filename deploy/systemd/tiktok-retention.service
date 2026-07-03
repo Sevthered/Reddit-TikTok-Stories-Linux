@@ -6,7 +6,7 @@ Type=oneshot
 User=christian
 Group=christian
 WorkingDirectory=/srv/tiktok/app
-EnvironmentFile=/srv/tiktok/app/.env
+EnvironmentFile=/etc/tiktok/environment
 Environment=TZ=Europe/Madrid
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/srv/tiktok/app/.venv/bin/python -u -m pipeline.retention

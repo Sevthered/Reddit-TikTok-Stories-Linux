@@ -7,7 +7,7 @@ Type=oneshot
 User=christian
 Group=christian
 WorkingDirectory=/srv/tiktok/app
-EnvironmentFile=/srv/tiktok/app/.env
+EnvironmentFile=/etc/tiktok/environment
 Environment=TZ=Europe/Madrid
 Environment=PYTHONUNBUFFERED=1
 Environment=PLAYWRIGHT_BROWSERS_PATH=/srv/tiktok/app/.playwright
