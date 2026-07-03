@@ -387,47 +387,76 @@ def _click_post(page: Page) -> None:
     # Give the click a moment to register; some modals appear ~1s later.
     page.wait_for_timeout(1500)
     _confirm_publish_dialog(page)
+    # Capture the form state right after the publish-dialog chain — helps
+    # diagnose the Content-Check-Lite flow if confirmation later times out.
+    _screenshot_debug(page, "after_publish_dialogs")
 
 
 def _confirm_publish_dialog(page: Page) -> None:
-    """After Publicar, TikTok sometimes opens a confirmation modal —
-    especially when 'Revisión del contenido simplificada' (Simplified
-    Content Review) is enabled or when AIGC was toggled on. The modal
-    asks the creator to confirm the publish. Click the affirmative
-    button (label varies by locale)."""
+    """After Publicar, TikTok's 2026 Content-Check-Lite flow can open a
+    SEQUENCE of confirmation modals — e.g. 'Publicar ahora', then a
+    'Continue to post?' / 'Continuar publicando' step — before the post
+    actually goes live. The old code clicked only the FIRST dialog and
+    returned, so the second gate was never confirmed and the post stayed
+    on the form (bugs/2026-07-04-tiktok-content-review-publish-break).
+
+    Click through each affirmative CTA until no more dialogs appear. Each
+    is intermittent, so absence is a clean no-op. Any open dialog with no
+    known affirmative is screenshotted + surfaced (not silently skipped)
+    so we can extend the label set from real evidence."""
     labels = (
-        "Publicar ahora",     # ES — Studio 2026-07 confirm CTA when review-simplified is ON
-        "Post now", "Publish now",
-        "Publicar",           # ES — sometimes reused as the confirm CTA
-        "Confirmar",          # ES
-        "Continuar",          # ES
+        "Publicar ahora",                              # ES — publish-now confirm
+        "Continuar publicando", "Seguir publicando",   # ES — 'Continue to post?' step
+        "Publicar de todos modos",                     # ES — 'Post anyway'
+        "Post now", "Publish now", "Continue to post", "Post anyway",
+        "Publicar",                                    # ES — sometimes reused
+        "Confirmar", "Continuar",                      # ES
         "Post", "Publish", "Confirm", "Continue", "OK",
     )
-    deadline = time.time() + 8
-    while time.time() < deadline:
-        # Only act if a dialog is actually open, otherwise we might
-        # re-click Publicar in the base form and duplicate.
+    deadline = time.time() + 25          # room for a couple of chained dialogs
+    clicks = 0
+    idle_polls = 0
+    while time.time() < deadline and clicks < 4:
+        dialog = page.locator('[role="dialog"], [role="alertdialog"]').first
         try:
-            dialog = page.locator('[role="dialog"], [role="alertdialog"]').first
-            if not dialog.is_visible(timeout=400):
-                page.wait_for_timeout(400)
-                continue
+            visible = dialog.is_visible(timeout=500)
         except Exception:
-            page.wait_for_timeout(400)
+            visible = False
+        if not visible:
+            # After clicking at least once, allow a short grace for a chained
+            # dialog to render; if none shows up, we're done.
+            idle_polls += 1
+            if idle_polls >= 3:
+                break
+            page.wait_for_timeout(500)
             continue
+        idle_polls = 0
 
+        clicked_this = False
         for label in labels:
             try:
                 btn = dialog.get_by_role("button", name=label, exact=True).first
-                if btn.is_visible(timeout=400):
+                if btn.is_visible(timeout=300):
+                    _screenshot_debug(page, f"publish_dialog_{clicks}")
                     btn.click()
-                    log.info("publish confirmation dialog: clicked %r", label)
-                    page.wait_for_timeout(600)
-                    return
+                    clicks += 1
+                    clicked_this = True
+                    log.info("publish confirmation dialog #%d: clicked %r", clicks, label)
+                    page.wait_for_timeout(1200)   # let the next dialog (if any) render
+                    break
             except Exception:
                 continue
-        page.wait_for_timeout(400)
-    log.info("no publish confirmation dialog visible (skipping)")
+
+        if not clicked_this:
+            # Dialog open but no known CTA — capture it so we can extend labels.
+            txt = _dump_visible_dialog(page)
+            log.warning("unhandled publish dialog (no known CTA): %r",
+                        (txt or "").replace("\n", " | ")[:200])
+            _screenshot_debug(page, "publish_dialog_unhandled")
+            break
+
+    if clicks == 0:
+        log.info("no publish confirmation dialog visible (skipping)")
 
 
 # Publish-confirm phrases. These are POST-publish signals — do NOT include
@@ -467,7 +496,7 @@ def _screenshot_debug(page: Page, tag: str) -> None:
         log.warning("screenshot failed: %s", e)
 
 
-def _wait_for_post_confirmation(page: Page, timeout_s: float = 180.0) -> str | None:
+def _wait_for_post_confirmation(page: Page, timeout_s: float = 240.0) -> str | None:
     """After clicking Publicar, TikTok Studio either:
       (a) navigates away from /tiktokstudio/upload (best signal), or
       (b) shows a `publicado` / `posted` / `en revisión` toast.
