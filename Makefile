@@ -20,7 +20,7 @@ INSTALL_SH := $(REPO)/scripts/install_systemd.sh
 
 PERSISTENT := tiktok-xvfb tiktok-bot
 TIMERS     := tiktok-confirm.timer tiktok-retention.timer tiktok-secrets-backup.timer tiktok-lynis-audit.timer \
-              tiktok-rkhunter-scan.timer \
+              tiktok-rkhunter-scan.timer tiktok-aide-check.timer \
               tiktok-slot-render@0000.timer tiktok-slot-upload@0000.timer \
               tiktok-slot-render@1200.timer tiktok-slot-upload@1200.timer
 ALL_UNITS  := $(addsuffix .service,$(PERSISTENT)) tiktok-webapp.service $(TIMERS)
@@ -32,7 +32,7 @@ ALL_UNITS  := $(addsuffix .service,$(PERSISTENT)) tiktok-webapp.service $(TIMERS
         kickstart-webapp kickstart-bot kickstart-upload kickstart-confirm \
         logs logs-webapp logs-bot logs-upload logs-confirm logs-xvfb \
         deps deps-py deps-node clean-logs doctor \
-        db-upgrade db-revision secrets-backup lynis-audit rkhunter-scan
+        db-upgrade db-revision secrets-backup lynis-audit rkhunter-scan aide-check aide-update
 
 help:
 	@echo "Automated-TikTok-Upload — make targets"
@@ -50,6 +50,8 @@ help:
 	@echo "    make secrets-backup   trigger the nightly age+curl backup now (task #7)"
 	@echo "    make lynis-audit      trigger the weekly Lynis security audit now (task #9)"
 	@echo "    make rkhunter-scan    trigger the weekly rkhunter malware scan now (task #13)"
+	@echo "    make aide-check       trigger the weekly AIDE file-integrity check now (task #14)"
+	@echo "    make aide-update      re-baseline AIDE after reviewing legitimate changes (task #14)"
 	@echo "    make kickstart-<svc>  restart one (webapp|bot|upload|confirm)"
 	@echo ""
 	@echo "  DB migrations (Alembic, task #4):"
@@ -128,6 +130,16 @@ lynis-audit:
 rkhunter-scan:
 	@sudo systemctl start tiktok-rkhunter-scan.service
 	@echo "→ scan run, see /var/log/rkhunter.log"
+
+aide-check:
+	@sudo systemctl start tiktok-aide-check.service
+	@echo "→ check run, see: journalctl -u tiktok-aide-check.service"
+
+aide-update:
+	@sudo aide --config=/etc/aide/aide.conf --update
+	@sudo mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+	@sudo chown root:root /var/lib/aide/aide.db && sudo chmod 0600 /var/lib/aide/aide.db
+	@echo "→ baseline re-promoted after review"
 
 # ---- db migrations (Alembic, task #4/#16) ------------------------------
 

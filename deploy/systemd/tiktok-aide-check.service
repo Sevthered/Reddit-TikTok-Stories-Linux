@@ -1,0 +1,39 @@
+[Unit]
+Description=Weekly AIDE file-integrity check
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/aide --config=/etc/aide/aide.conf --check
+StandardOutput=journal
+StandardError=journal
+
+# Deliberately no hardening directives here, same rationale as
+# tiktok-lynis-audit.service and tiktok-rkhunter-scan.service: a real AIDE
+# check needs broad read access across the watched system paths --
+# ProtectSystem/ProtectHome would hide exactly what it exists to inspect.
+# Runs as root (no User=).
+#
+# Deliberately no OnFailure=tiktok-notify@ here either, unlike rkhunter:
+# unattended-upgrades is active on this box, so routine security updates
+# legitimately change /etc + system binaries on their own schedule --
+# paging on every apt run would be alert fatigue (same rationale as
+# tiktok-lynis-audit). Findings are reviewed manually via `make aide-check`
+# / journalctl, not pushed to Telegram.
+#
+# Scope is a targeted ALLOW-LIST, not aide-common's default whole-filesystem
+# scan: only /etc, /usr, /boot, /root are watched (see
+# /etc/aide/aide.conf.d/99_tiktok_exclude, host-only). This was a deliberate
+# pivot away from an exclusion-based approach after three rounds of chasing
+# snap auto-refresh noise (microk8s/microceph touch /var/snap, /snap,
+# /dev/loop*, /run/udev, and generated systemd units on every refresh) --
+# see wiki/decisions/2026-07-03-aide-file-integrity.md for the full story.
+#
+# I/O niceness: AIDE hashing is disk-read-heavy; keep it off the pipeline's
+# back during render/upload cycles.
+IOSchedulingClass=idle
+Nice=10
+
+# Resource limits (R3.1 style, sized for a curated /etc+/usr+/boot+/root scan).
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=64
