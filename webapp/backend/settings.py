@@ -79,6 +79,19 @@ for h in _extra_hosts.split(","):
 # LAN-only server where the allowlist adds friction without security value.
 ALLOW_ANY_HOST: bool = os.environ.get("WEBAPP_ALLOW_ANY_HOST", "0") == "1"
 
+# Origin allowlist (R2.1, research run 3): "belt-and-braces" on top of
+# CSRF — reject a mutating request whose Origin header doesn't match
+# one of these, on the theory that a legitimate same-origin fetch()
+# either omits Origin or sends exactly one of these. Derived from
+# ALLOWED_HOSTS (which already carries the real prod hostname via
+# WEBAPP_ALLOWED_HOSTS) rather than a second hostname list to maintain.
+ALLOWED_ORIGINS: set[str] = set()
+for _h in ALLOWED_HOSTS:
+    _scheme = "http" if _h.split(":")[0] in ("127.0.0.1", "localhost") else "https"
+    ALLOWED_ORIGINS.add(f"{_scheme}://{_h}")
+if DEV_MODE:
+    ALLOWED_ORIGINS.update(DEV_ORIGINS)
+
 # CSRF double-submit secret (P0.1, research runs 3 + 7). Cloudflare Zero
 # Trust's `CF_Authorization` cookie is still an ambient browser credential
 # an attacker page can ride — Zero Trust authenticates the user, it does

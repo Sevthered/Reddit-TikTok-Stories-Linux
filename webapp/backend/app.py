@@ -166,6 +166,25 @@ async def csrf_protect_middleware(request: Request, call_next):
 
 
 @app.middleware("http")
+async def origin_allowlist_middleware(request: Request, call_next):
+    # Belt-and-braces on top of CSRF (R2.1, research run 3). A browser
+    # sends Origin on same-origin fetch()/XHR mutations in every modern
+    # engine, so "absent" here means a non-browser caller (curl, a
+    # webhook) rather than a bypass — CSRF's token check is what stops
+    # a forged browser request either way. Reject only when Origin is
+    # PRESENT and doesn't match, never when it's simply missing.
+    if (
+        request.method in _CSRF_PROTECTED_METHODS
+        and request.url.path not in _CSRF_EXEMPT_PATHS
+    ):
+        origin = request.headers.get("origin")
+        if origin and origin not in settings.ALLOWED_ORIGINS:
+            log.warning("rejected Origin %r on %s %s", origin, request.method, request.url.path)
+            return JSONResponse(status_code=403, content={"detail": f"Origin not allowed: {origin!r}"})
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
     # Registered last among the @app.middleware("http") functions in this
     # file, which makes it outermost — Starlette wraps middleware stacks

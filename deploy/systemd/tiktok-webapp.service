@@ -14,7 +14,7 @@ Environment=TZ=Europe/Madrid
 Environment=PYTHONUNBUFFERED=1
 Environment=PLAYWRIGHT_BROWSERS_PATH=/srv/tiktok/app/.playwright
 Environment=WEBAPP_ALLOW_ANY_HOST=1
-ExecStart=/srv/tiktok/app/.venv/bin/python -u -m uvicorn webapp.backend.app:app --host 0.0.0.0 --port 8765
+ExecStart=/srv/tiktok/app/.venv/bin/python -u -m uvicorn webapp.backend.app:app --host 0.0.0.0 --port 8765 --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
