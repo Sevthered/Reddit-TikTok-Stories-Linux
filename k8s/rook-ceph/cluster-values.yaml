@@ -31,6 +31,11 @@ cephClusterSpec:
       osd_memory_target: "2147483648"   # 2 GiB
       osd_max_backfills: "1"
       osd_recovery_max_active: "1"
+    global:
+      # Small cluster (3 OSDs) with block+fs+object pools legitimately has
+      # more PGs/OSD than the default 250 soft cap → raise it. Not masking a
+      # problem; you can't spread PGs thin across only 3 OSDs.
+      mon_max_pg_per_osd: "400"
 
   # EXPLICIT, SAFE device selection — never let Ceph auto-grab disks.
   # Only sda3 on the 3 named nodes is ever touched; sda/sda1/sda2 (the OS)
@@ -75,8 +80,13 @@ cephClusterSpec:
 # (name ceph-blockpool, failureDomain host, replica 3, StorageClass
 # ceph-block as cluster default). Left to inherit chart defaults.
 
-# CephFS (RWX) and object store (S3) start DISABLED — added incrementally in
-# Phase 3 Steps 5 & 6 via `helm upgrade` after block storage is verified
-# healthy (teaching: bring one thing up at a time, isolate failures).
-cephFileSystems: []
-cephObjectStores: []
+# CephFS (RWX) + object store (S3) — enabled after block storage was verified
+# healthy (incremental bring-up). These inherit the chart's proven defaults:
+#   cephFileSystems  → CephFilesystem "ceph-filesystem" (MDS active+standby,
+#                      replica-3 metadata+data) + StorageClass "ceph-filesystem"
+#                      (RWX). NOTE: default MDS request is 4Gi — heavy; tune
+#                      later via the CephFilesystem CR if node pressure appears.
+#   cephObjectStores → CephObjectStore "ceph-objectstore" (RGW, replica-3) +
+#                      StorageClass "ceph-bucket" (S3 object storage).
+# (Left to chart defaults rather than hand-reproducing the full storageClass
+# CSI-parameter blocks — less error-prone.)
