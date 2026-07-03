@@ -19,7 +19,11 @@ StandardOutput=journal
 StandardError=journal
 
 # Hardening (P0.5, research run 7). Tighter than webapp: the bot never
-# touches config.toml or the secrets file, only data/ (DB + artifacts).
+# touches config.toml or the secrets file, only data/ (DB + artifacts)
+# and logs/ (core.logging_setup.setup_logging()'s RotatingFileHandler
+# writes to <repo_root>/logs/, NOT data/logs/ -- a real deploy failure
+# caught during rollout: strict mode blocked the log write and crashed
+# the bot on startup before this line was added).
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
@@ -32,7 +36,7 @@ LockPersonality=yes
 RestrictRealtime=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
-ReadWritePaths=/srv/tiktok/app/data
+ReadWritePaths=/srv/tiktok/app/data /srv/tiktok/app/logs
 
 [Install]
 WantedBy=multi-user.target

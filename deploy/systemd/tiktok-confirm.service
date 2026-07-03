@@ -15,7 +15,8 @@ ExecStart=/srv/tiktok/app/.venv/bin/python -u pipeline/confirm_live.py
 StandardOutput=journal
 StandardError=journal
 
-# Hardening (P0.5, research run 7). DB updates only, no config edits.
+# Hardening (P0.5, research run 7). DB updates + logs/ (see
+# tiktok-bot.service for why logs/ is separate from data/).
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
@@ -28,4 +29,4 @@ LockPersonality=yes
 RestrictRealtime=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
-ReadWritePaths=/srv/tiktok/app/data
+ReadWritePaths=/srv/tiktok/app/data /srv/tiktok/app/logs
