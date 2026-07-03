@@ -159,9 +159,19 @@ class JobManager:
             # Jobs here inherit tiktok-webapp.service's environment, so
             # they need the same redirect, independently of the systemd
             # fix on the upload-specific units.
+            #
+            # DISPLAY is the other half of that same headed-Chromium
+            # requirement: the upload job (pipeline.upload_worker) launches
+            # Chromium headed and needs an X server. The systemd
+            # tiktok-slot-upload@ units set DISPLAY=:99 (Xvfb); the webapp
+            # unit doesn't, so a bot/web-triggered upload died with "Missing
+            # X server or $DISPLAY". Inject it here so JobManager uploads run
+            # under the same Xvfb :99. Inert for the headless kinds
+            # (render's cover, confirm's Display-API call).
             chromium_home = self._repo_root / ".chromium-home"
             chromium_home.mkdir(exist_ok=True)
-            env = {**os.environ, "PYTHONUNBUFFERED": "1", "HOME": str(chromium_home)}
+            env = {**os.environ, "PYTHONUNBUFFERED": "1",
+                   "HOME": str(chromium_home), "DISPLAY": ":99"}
             log.info("job start kind=%s argv=%s", kind, argv)
             proc = await asyncio.create_subprocess_exec(
                 *argv,
