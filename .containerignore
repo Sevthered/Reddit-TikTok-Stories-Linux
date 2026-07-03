@@ -1,0 +1,25 @@
+# Build-context excludes for the Containerfile (Podman/Docker).
+# Keep the image to code + deps; runtime state and non-app files stay out.
+.git
+.gitignore
+data
+.venv
+node_modules
+webapp/frontend/node_modules
+.playwright
+.chromium-home
+logs
+wiki
+k8s
+.archive
+_templates
+.obsidian
+deploy
+docs
+*.pyc
+__pycache__
+**/__pycache__
+.DS_Store
+CLAUDE.md
+Containerfile
+.containerignore
