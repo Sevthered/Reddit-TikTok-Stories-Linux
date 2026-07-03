@@ -1,0 +1,57 @@
+# kube-prometheus-stack values — TUNED for 15GB nodes (k8s-migration Phase 4).
+# Prometheus + Grafana + node-exporter + kube-state-metrics. Trimmed hard:
+# short retention, modest resources, Alertmanager OFF (add later), state on
+# Ceph PVCs. Grafana routed via ingress-nginx at grafana.mk8s.lan.
+
+alertmanager:
+  enabled: false          # skip for the baseline — saves RAM
+
+prometheus:
+  prometheusSpec:
+    retention: 5d
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: ceph-block
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 10Gi
+
+grafana:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+  persistence:
+    enabled: true
+    storageClassName: ceph-block
+    size: 2Gi
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hosts:
+      - grafana.mk8s.lan
+  # default admin password (change later); username admin
+  adminPassword: mk8s-grafana
+
+# node-exporter + kube-state-metrics keep defaults (light).
+# Reduce Prometheus scrape footprint a touch:
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi

@@ -1,0 +1,71 @@
+# In-cluster container image registry (k8s-migration Phase 4).
+#
+# Purpose: Podman builds images on the Mac; the k3s nodes can't reach the
+# Mac's local image store, so they pull from THIS registry. Backed by Ceph
+# (ceph-block PVC) for persistence; exposed on a pinned MetalLB IP.
+#
+# Phase-4 scope: stand it up, running + persistent + LAN-reachable. Phase 5
+# wires client trust (k3s containerd registries.yaml + Podman) and does the
+# first push/pull. Runs HTTP for now (internal LAN); TLS + auth are a
+# follow-up (cert-manager internal-ca + htpasswd).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: registry
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: registry-data
+  namespace: registry
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: ceph-block
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry
+  namespace: registry
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: registry}
+  template:
+    metadata:
+      labels: {app: registry}
+    spec:
+      containers:
+        - name: registry
+          image: registry:2
+          ports:
+            - containerPort: 5000
+          env:
+            - {name: REGISTRY_STORAGE_DELETE_ENABLED, value: "true"}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/registry}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 512Mi}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: registry-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry
+  namespace: registry
+  annotations:
+    metallb.io/loadBalancerIPs: "10.10.10.21"
+spec:
+  type: LoadBalancer
+  selector: {app: registry}
+  ports:
+    - port: 5000
+      targetPort: 5000

@@ -1,0 +1,43 @@
+# cert-manager baseline issuers (k8s-migration Phase 4).
+#
+# Two-tier self-signed setup (standard pattern):
+#  1. `selfsigned` ClusterIssuer bootstraps a root CA certificate.
+#  2. `internal-ca` ClusterIssuer signs service certs with that CA — so you
+#     trust ONE CA cert instead of every self-signed leaf.
+#
+# Good enough for internal platform TLS. Real trusted certs (Let's Encrypt
+# via Cloudflare DNS-01, using the existing CF account) are a follow-up —
+# needs a CF API token secret + an ACME ClusterIssuer.
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: internal-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: mk8s-internal-ca
+  secretName: internal-ca-secret
+  duration: 87600h   # 10y
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: internal-ca
+spec:
+  ca:
+    secretName: internal-ca-secret

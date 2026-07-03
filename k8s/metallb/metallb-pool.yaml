@@ -1,0 +1,27 @@
+# MetalLB address pool (k8s-migration Phase 4) — bare-metal LoadBalancer.
+#
+# L2 (layer-2/ARP) mode: for each LoadBalancer service IP, one node answers
+# ARP on the LAN so traffic reaches it, then kube-proxy forwards to the
+# service's pods. No router/BGP config needed.
+#
+# Range 10.10.10.20-.40 is OUTSIDE the pfSense K8S-interface DHCP pool
+# (.100-.250) and above the node IPs (.11-.14). 10.10.10.15 is reserved for
+# a future kube-vip API VIP (not in this pool).
+---
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: lan-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 10.10.10.20-10.10.10.40
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: lan-l2
+  namespace: metallb-system
+spec:
+  ipAddressPools:
+    - lan-pool

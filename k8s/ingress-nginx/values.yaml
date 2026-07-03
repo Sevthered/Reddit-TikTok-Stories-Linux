@@ -1,0 +1,23 @@
+# ingress-nginx controller values (k8s-migration Phase 4).
+# The cluster's HTTP(S) router. Its controller Service is type=LoadBalancer,
+# so MetalLB assigns it a LAN IP — pinned to 10.10.10.20 for a stable entry
+# point. This is the standard, portable ingress (we disabled k3s's Traefik
+# in Phase 2 deliberately to choose this).
+controller:
+  service:
+    type: LoadBalancer
+    annotations:
+      metallb.io/loadBalancerIPs: "10.10.10.20"
+  # Homelab-sized resources.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+  # Single replica (homelab); raise for HA later.
+  replicaCount: 1
+  # Make this the default IngressClass so Ingress objects use it without
+  # specifying ingressClassName.
+  ingressClassResource:
+    default: true
