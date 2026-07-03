@@ -46,7 +46,7 @@ help:
 	@echo "    make reload           restart bot"
 	@echo "    make status           unit + timer state"
 	@echo "    make security         systemd-analyze security, all units (R3.2)"
-	@echo "    make secrets-backup   trigger the nightly age+rclone backup now (task #7)"
+	@echo "    make secrets-backup   trigger the nightly age+curl backup now (task #7)"
 	@echo "    make kickstart-<svc>  restart one (webapp|bot|upload|confirm)"
 	@echo ""
 	@echo "  DB migrations (Alembic, task #4):"
