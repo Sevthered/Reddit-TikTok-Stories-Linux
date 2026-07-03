@@ -123,6 +123,24 @@ if not CSRF_SECRET:
 RATE_LIMIT_DEFAULT: str = os.environ.get("WEBAPP_RATE_LIMIT_DEFAULT", "120/minute")
 RATE_LIMIT_READ_DEFAULT: str = os.environ.get("WEBAPP_RATE_LIMIT_READ_DEFAULT", "300/minute")
 
+# Cloudflare Access JWT validation (R2.4, research runs 3 + 7). Zero Trust
+# injects a signed Cf-Access-Jwt-Assertion header on every request that
+# passes its edge policy; the app now verifies it server-side too instead
+# of trusting the network path alone (defense-in-depth against a future
+# Tunnel/firewall misconfiguration — see
+# wiki/bugs/2026-07-03-webapp-lan-bypass-firewall.md for a real instance
+# of that class of bug). Neither value below is a secret: the AUD tag
+# just identifies which Access application to expect, and the JWKS
+# endpoint serves public key material — safe to default in code, still
+# overridable via env if the Access app is ever recreated.
+CF_ACCESS_TEAM_DOMAIN: str = os.environ.get(
+    "WEBAPP_CF_ACCESS_TEAM_DOMAIN", "polished-wind-0447.cloudflareaccess.com"
+)
+CF_ACCESS_AUD: str = os.environ.get(
+    "WEBAPP_CF_ACCESS_AUD",
+    "994b62689401fa9e192a9f4f5c11dda668af831e6550a3224e9a21c8502b961d",
+)
+
 if DEV_MODE:
     # SvelteKit dev server originates its own /api proxies with its Host,
     # which passes through unchanged.

@@ -24,6 +24,7 @@ from pathlib import Path
 
 from core.config import _load_dotenv
 from webapp.backend import settings
+from webapp.backend.cf_access import CfAccessError, verify_access_jwt
 from webapp.backend.jobs import JobManager
 from webapp.backend.rate_limit import limiter
 from webapp.backend.security_headers import SECURITY_HEADERS
@@ -67,6 +68,13 @@ _CSRF_PROTECTED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 # Paths exempt from CSRF: issuing the token itself, and health/status reads
 # that happen to use POST-adjacent verbs nowhere today but kept explicit.
 _CSRF_EXEMPT_PATHS = {"/api/csrf"}
+
+# Paths exempt from Cf-Access-Jwt-Assertion verification, applied to every
+# method (unlike the CSRF/origin exemptions above, which only guard
+# mutating verbs). /api/health is hit directly over loopback by the
+# deploy script and systemd health checks — that path never traverses
+# the Tunnel, so it never carries the header.
+_CF_ACCESS_EXEMPT_PATHS = {"/api/health"}
 
 
 @asynccontextmanager
@@ -141,6 +149,31 @@ async def host_allowlist(request: Request, call_next):
         return PlainTextResponse(
             f"Host header not allowed: {host!r}", status_code=400,
         )
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def cf_access_middleware(request: Request, call_next):
+    # Cloudflare Zero Trust authenticates the user at the edge and injects
+    # this header on every request that passes its policy — the app used
+    # to trust its mere presence implicitly. Verifying the signature/aud/
+    # iss/exp here means a future Tunnel/firewall misconfiguration that
+    # reaches the origin without going through Access (R2.4, research
+    # runs 3 + 7; see wiki/bugs/2026-07-03-webapp-lan-bypass-firewall.md
+    # for a real instance of that class of bug) still gets rejected,
+    # instead of silently trusting the network path alone. Applies to
+    # every method, not just mutations — this is authN, not CSRF.
+    if settings.DEV_MODE or request.url.path in _CF_ACCESS_EXEMPT_PATHS:
+        return await call_next(request)
+    token = request.headers.get("cf-access-jwt-assertion")
+    if not token:
+        log.warning("missing Cf-Access-Jwt-Assertion on %s %s", request.method, request.url.path)
+        return JSONResponse(status_code=403, content={"detail": "missing Cloudflare Access assertion"})
+    try:
+        verify_access_jwt(token)
+    except CfAccessError as exc:
+        log.warning("Cf-Access-Jwt-Assertion failed on %s %s: %s", request.method, request.url.path, exc)
+        return JSONResponse(status_code=403, content={"detail": "invalid Cloudflare Access assertion"})
     return await call_next(request)
 
 
