@@ -26,6 +26,7 @@ from core.config import _load_dotenv
 from webapp.backend import settings
 from webapp.backend.jobs import JobManager
 from webapp.backend.rate_limit import limiter
+from webapp.backend.security_headers import SECURITY_HEADERS
 from webapp.backend.routers import (
     actions,
     agents,
@@ -162,6 +163,18 @@ async def csrf_protect_middleware(request: Request, call_next):
             log.warning("CSRF check failed: %s %s (%s)", request.method, request.url.path, exc.message)
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
     return await call_next(request)
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    # Registered last among the @app.middleware("http") functions in this
+    # file, which makes it outermost — Starlette wraps middleware stacks
+    # so the most-recently-added one runs first on the way in and last on
+    # the way out. That means these headers land on every response,
+    # including the 400/403/429 error bodies from the middlewares above.
+    response = await call_next(request)
+    response.headers.update(SECURITY_HEADERS)
+    return response
 
 
 @app.get("/api/csrf")
