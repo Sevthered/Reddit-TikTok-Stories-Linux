@@ -5,9 +5,13 @@ use case: systemd unit under `WorkingDirectory=/srv/tiktok/app`).
 """
 from __future__ import annotations
 
+import logging
 import os
+import secrets
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+_log = logging.getLogger("webapp")
 
 # ---- Paths ----------------------------------------------------------------
 
@@ -61,6 +65,23 @@ for h in _extra_hosts.split(","):
 # `WEBAPP_ALLOW_ANY_HOST=1` disables the check entirely — useful on a
 # LAN-only server where the allowlist adds friction without security value.
 ALLOW_ANY_HOST: bool = os.environ.get("WEBAPP_ALLOW_ANY_HOST", "0") == "1"
+
+# CSRF double-submit secret (P0.1, research runs 3 + 7). Cloudflare Zero
+# Trust's `CF_Authorization` cookie is still an ambient browser credential
+# an attacker page can ride — Zero Trust authenticates the user, it does
+# not stop a forged cross-site request. Set WEBAPP_CSRF_SECRET in prod
+# (systemd EnvironmentFile=); falls back to a random per-boot secret in
+# dev, which just means CSRF tokens don't survive a restart — fine
+# locally, not acceptable behind a real deployment.
+CSRF_SECRET: str = os.environ.get("WEBAPP_CSRF_SECRET", "")
+if not CSRF_SECRET:
+    CSRF_SECRET = secrets.token_hex(32)
+    if not DEV_MODE:
+        _log.warning(
+            "WEBAPP_CSRF_SECRET not set — using a random per-boot secret. "
+            "Every restart invalidates outstanding CSRF tokens. Set "
+            "WEBAPP_CSRF_SECRET via systemd EnvironmentFile= for prod."
+        )
 
 if DEV_MODE:
     # SvelteKit dev server originates its own /api proxies with its Host,

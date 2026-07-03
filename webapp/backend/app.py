@@ -11,9 +11,12 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.responses import PlainTextResponse
+from fastapi_csrf_protect import CsrfProtect
+from fastapi_csrf_protect.exceptions import CsrfProtectError
+from pydantic import BaseModel
+from starlette.responses import JSONResponse, PlainTextResponse
 
 import sys
 from pathlib import Path
@@ -36,6 +39,31 @@ from webapp.backend.routers import (
 )
 
 log = logging.getLogger("webapp")
+
+
+# ---- CSRF (double-submit cookie) -------------------------------------------
+#
+# Cloudflare Zero Trust authenticates the user; it does not stop a forged
+# cross-site request riding the browser's ambient `CF_Authorization`
+# cookie. Double-submit CSRF closes that gap (research runs 3 + 7).
+class CsrfSettings(BaseModel):
+    secret_key: str = settings.CSRF_SECRET
+    cookie_samesite: str = "lax"
+    cookie_secure: bool = not settings.DEV_MODE
+    header_name: str = "X-CSRF-Token"
+
+
+@CsrfProtect.load_config
+def _csrf_config() -> CsrfSettings:
+    return CsrfSettings()
+
+
+# Methods that mutate state — everything else (GET/HEAD/OPTIONS) is exempt
+# by definition since CSRF only matters for state-changing requests.
+_CSRF_PROTECTED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+# Paths exempt from CSRF: issuing the token itself, and health/status reads
+# that happen to use POST-adjacent verbs nowhere today but kept explicit.
+_CSRF_EXEMPT_PATHS = {"/api/csrf"}
 
 
 @asynccontextmanager
@@ -90,6 +118,40 @@ async def host_allowlist(request: Request, call_next):
             f"Host header not allowed: {host!r}", status_code=400,
         )
     return await call_next(request)
+
+
+@app.middleware("http")
+async def csrf_protect_middleware(request: Request, call_next):
+    # NOTE: a `@app.exception_handler(CsrfProtectError)` does NOT catch
+    # exceptions raised here — Starlette's BaseHTTPMiddleware (which
+    # `@app.middleware("http")` wraps) runs OUTSIDE the ExceptionMiddleware
+    # layer that FastAPI's exception handlers attach to. An uncaught raise
+    # in this function propagates as a raw 500, not the intended 403.
+    # Caught + converted to a response right here instead.
+    if (
+        request.method in _CSRF_PROTECTED_METHODS
+        and request.url.path not in _CSRF_EXEMPT_PATHS
+    ):
+        csrf_protect = CsrfProtect()
+        try:
+            await csrf_protect.validate_csrf(request)
+        except CsrfProtectError as exc:
+            log.warning("CSRF check failed: %s %s (%s)", request.method, request.url.path, exc.message)
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+    return await call_next(request)
+
+
+@app.get("/api/csrf")
+async def get_csrf_token(csrf_protect: CsrfProtect = Depends()):
+    """Issue a CSRF token pair. Frontend fetches this once on load, keeps
+    the plaintext token in memory, and echoes it back as `X-CSRF-Token` on
+    every mutating request. The signed half lives in an HttpOnly cookie —
+    JS never reads the cookie directly, only the plaintext token from this
+    response body, so this is the signed variant of double-submit."""
+    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
+    response = JSONResponse({"csrf_token": csrf_token})
+    csrf_protect.set_csrf_cookie(signed_token, response)
+    return response
 
 
 # ---- CORS (dev only) ------------------------------------------------------

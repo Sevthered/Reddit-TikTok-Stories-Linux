@@ -76,13 +76,52 @@ export type EnvOut = {
 	entries: EnvEntry[];
 };
 
+// ---- CSRF (P0.1) -----------------------------------------------------------
+//
+// Signed double-submit: /api/csrf sets an HttpOnly signed cookie (JS never
+// reads it) and returns the matching plaintext token in the response body,
+// which we cache in memory and echo back as X-CSRF-Token on every mutating
+// request. Backend validates cookie vs header
+// (webapp/backend/app.py::csrf_protect_middleware).
+let _csrfToken: string | null = null;
+let _csrfTokenPromise: Promise<string> | null = null;
+
+async function _fetchCsrfToken(): Promise<string> {
+	const r = await fetch('/api/csrf');
+	if (!r.ok) throw new Error(`csrf token fetch failed: ${r.status}`);
+	const j = (await r.json()) as { csrf_token: string };
+	return j.csrf_token;
+}
+
+async function _getCsrfToken(): Promise<string> {
+	if (_csrfToken) return _csrfToken;
+	if (!_csrfTokenPromise) {
+		_csrfTokenPromise = _fetchCsrfToken().then((t) => {
+			_csrfToken = t;
+			return t;
+		});
+	}
+	return _csrfTokenPromise;
+}
+
+// Cookie has a max age (default 3600s) and the signing secret is
+// per-boot in dev — a 403 on a mutating call means the token's stale,
+// not that the request itself was wrong. Clear the cache so the next
+// mutating call re-fetches instead of retrying with the same dead token.
+function _invalidateCsrfToken(): void {
+	_csrfToken = null;
+	_csrfTokenPromise = null;
+}
+
 export async function apiPut<T>(path: string, body: unknown): Promise<T> {
+	const csrfToken = await _getCsrfToken();
 	const r = await fetch(path, {
 		method: 'PUT',
-		headers: { 'Content-Type': 'application/json' },
+		headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
 		body: JSON.stringify(body)
 	});
 	if (!r.ok) {
+		if (r.status === 403) _invalidateCsrfToken();
 		let msg = `${r.status}`;
 		try {
 			const j = await r.json();
@@ -165,8 +204,10 @@ export type DeleteSlotResult = {
 };
 
 export async function apiDelete<T>(path: string): Promise<T> {
-	const r = await fetch(path, { method: 'DELETE' });
+	const csrfToken = await _getCsrfToken();
+	const r = await fetch(path, { method: 'DELETE', headers: { 'X-CSRF-Token': csrfToken } });
 	if (!r.ok) {
+		if (r.status === 403) _invalidateCsrfToken();
 		let msg = `${r.status}`;
 		try {
 			const j = await r.json();
@@ -180,12 +221,16 @@ export async function apiDelete<T>(path: string): Promise<T> {
 }
 
 export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
+	const csrfToken = await _getCsrfToken();
 	const r = await fetch(path, {
 		method: 'POST',
-		headers: body ? { 'Content-Type': 'application/json' } : {},
+		headers: body
+			? { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken }
+			: { 'X-CSRF-Token': csrfToken },
 		body: body ? JSON.stringify(body) : undefined
 	});
 	if (!r.ok) {
+		if (r.status === 403) _invalidateCsrfToken();
 		let msg = `${r.status}`;
 		try {
 			const j = await r.json();
