@@ -18,8 +18,11 @@ import asyncio
 import logging
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+
+from webapp.backend import settings
+from webapp.backend.rate_limit import limiter
 
 log = logging.getLogger("webapp.routers.agents")
 
@@ -63,7 +66,8 @@ class AgentActionOut(BaseModel):
 
 
 @router.post("/{label}/load", response_model=AgentActionOut)
-async def load_agent(label: str) -> AgentActionOut:
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
+async def load_agent(request: Request, label: str) -> AgentActionOut:
     unit = _guard(label)
     rc, out = await _run(_SYSTEMCTL, "start", unit)
     if rc != 0:
@@ -73,7 +77,8 @@ async def load_agent(label: str) -> AgentActionOut:
 
 
 @router.post("/{label}/unload", response_model=AgentActionOut)
-async def unload_agent(label: str) -> AgentActionOut:
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
+async def unload_agent(request: Request, label: str) -> AgentActionOut:
     unit = _guard(label)
     rc, out = await _run(_SYSTEMCTL, "stop", unit)
     if rc != 0:
@@ -82,7 +87,8 @@ async def unload_agent(label: str) -> AgentActionOut:
 
 
 @router.post("/{label}/kickstart", response_model=AgentActionOut)
-async def kickstart_agent(label: str) -> AgentActionOut:
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
+async def kickstart_agent(request: Request, label: str) -> AgentActionOut:
     unit = _guard(label)
     rc, out = await _run(_SYSTEMCTL, "restart", unit)
     if rc != 0:

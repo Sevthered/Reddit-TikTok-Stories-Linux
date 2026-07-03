@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi_csrf_protect import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
 from pydantic import BaseModel
+from slowapi.errors import RateLimitExceeded
 from starlette.responses import JSONResponse, PlainTextResponse
 
 import sys
@@ -24,6 +25,7 @@ from pathlib import Path
 from core.config import _load_dotenv
 from webapp.backend import settings
 from webapp.backend.jobs import JobManager
+from webapp.backend.rate_limit import limiter
 from webapp.backend.routers import (
     actions,
     agents,
@@ -98,6 +100,27 @@ app = FastAPI(
     redoc_url=None,
     openapi_url="/api/openapi.json",
 )
+
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    # slowapi's own default handler returns {"error": ...}; every other
+    # error path in this API returns {"detail": ...} (FastAPI's default
+    # HTTPException shape) — normalize so frontend error parsing
+    # (apiPut/apiPost/apiDelete reading `j?.detail`) works uniformly.
+    return JSONResponse(status_code=429, content={"detail": f"rate limit exceeded: {exc.detail}"})
+
+
+# No SlowAPIMiddleware — see webapp/backend/rate_limit.py docstring for
+# why its auto-detection is non-functional against this FastAPI version.
+# Enforcement is per-route via @limiter.limit() on the mutating routes.
+# This exception handler works correctly (unlike the CSRF one above
+# would if attached to a raw middleware): RateLimitExceeded raised by a
+# decorated route function is raised from WITHIN the routing layer, not
+# from a @app.middleware("http") function, so it's inside the scope
+# FastAPI's exception handlers actually cover.
 
 
 # ---- Host-header allowlist -------------------------------------------------

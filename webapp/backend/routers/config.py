@@ -18,11 +18,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import tomlkit
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from core.config import ConfigError, load_config
 from webapp.backend import settings
+from webapp.backend.rate_limit import limiter
 
 log = logging.getLogger("webapp.routers.config")
 
@@ -68,7 +69,8 @@ def get_toml() -> TomlOut:
 
 
 @router.put("/toml", response_model=TomlOut)
-def put_toml(payload: TomlIn) -> TomlOut:
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
+def put_toml(request: Request, payload: TomlIn) -> TomlOut:
     path = settings.CONFIG_PATH
     # Write to a temp file in the same directory so the atomic os.replace
     # stays on-device. Validate with load_config before swap.
@@ -106,7 +108,8 @@ class SectionPatchIn(BaseModel):
 
 
 @router.put("/toml/section", response_model=TomlOut)
-def put_toml_section(payload: SectionPatchIn) -> TomlOut:
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
+def put_toml_section(request: Request, payload: SectionPatchIn) -> TomlOut:
     """Patch one `[section]` in config.toml while preserving comments,
     key ordering, and whitespace. tomlkit rewrites only the touched keys
     and re-emits the rest byte-for-byte, so hand-authored comments (the
@@ -223,7 +226,8 @@ def get_env() -> EnvOut:
 
 
 @router.put("/env/{key}", response_model=EnvEntry)
-def put_env(key: str, payload: EnvPut) -> EnvEntry:
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
+def put_env(request: Request, key: str, payload: EnvPut) -> EnvEntry:
     path = settings.ENV_PATH
     if not path.exists():
         raise HTTPException(404, detail=f"{path} missing")

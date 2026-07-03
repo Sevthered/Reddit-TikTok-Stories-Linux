@@ -20,7 +20,9 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.sse import EventSourceResponse
 from pydantic import BaseModel, Field
 
+from webapp.backend import settings
 from webapp.backend.jobs import Job, JobBusyError, JobManager
+from webapp.backend.rate_limit import limiter
 
 log = logging.getLogger("webapp.routers.jobs")
 
@@ -99,6 +101,7 @@ async def _start(request: Request, kind, args: list[str]) -> JobOut:
 
 
 @router.post("/render", response_model=JobOut)
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def start_render(payload: RenderIn, request: Request) -> JobOut:
     args = ["--limit", str(payload.limit)]
     if payload.dry_run:
@@ -112,6 +115,7 @@ async def start_render(payload: RenderIn, request: Request) -> JobOut:
 
 
 @router.post("/upload", response_model=JobOut)
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def start_upload(payload: UploadIn, request: Request) -> JobOut:
     args = ["--visibility", payload.visibility]
     if payload.force:
@@ -126,6 +130,7 @@ async def start_upload(payload: UploadIn, request: Request) -> JobOut:
 
 
 @router.post("/confirm", response_model=JobOut)
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def start_confirm(payload: ConfirmIn, request: Request) -> JobOut:
     args: list[str] = []
     if payload.force:
@@ -134,6 +139,7 @@ async def start_confirm(payload: ConfirmIn, request: Request) -> JobOut:
 
 
 @router.post("/{job_id}/cancel", response_model=JobOut)
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
 async def cancel_job(job_id: str, request: Request) -> JobOut:
     mgr = _mgr(request)
     j = mgr.get(job_id)

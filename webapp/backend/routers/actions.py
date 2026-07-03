@@ -16,11 +16,13 @@ import asyncio
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from core.db import Db, RenderRow
 from core.notify import Notifier, NotifierError
+from webapp.backend import settings
 from webapp.backend.deps import get_db
+from webapp.backend.rate_limit import limiter
 from webapp.backend.schemas import RenderOut
 
 log = logging.getLogger("webapp.actions")
@@ -93,14 +95,16 @@ def _do_reject(db: Db, post_id: str) -> RenderRow:
 
 
 @router.post("/{post_id}/approve", response_model=RenderOut)
-async def approve(post_id: str, db: Db = Depends(get_db)) -> RenderOut:
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
+async def approve(request: Request, post_id: str, db: Db = Depends(get_db)) -> RenderOut:
     row = await asyncio.to_thread(_do_approve, db, post_id)
     log.info("approved %s via web", post_id)
     return RenderOut.from_row(row)
 
 
 @router.post("/{post_id}/reject", response_model=RenderOut)
-async def reject(post_id: str, db: Db = Depends(get_db)) -> RenderOut:
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
+async def reject(request: Request, post_id: str, db: Db = Depends(get_db)) -> RenderOut:
     row = await asyncio.to_thread(_do_reject, db, post_id)
     log.info("rejected %s via web (artifacts unlinked)", post_id)
     return RenderOut.from_row(row)

@@ -34,6 +34,7 @@ uvicorn[standard]==0.49.0
 python-multipart==0.0.32
 tomlkit==0.15.0          # comment-preserving TOML round-trip for /api/config/toml/section
 fastapi-csrf-protect==1.0.7   # double-submit CSRF (P0.1, research run 3 + 7)
+slowapi==0.1.10               # rate limiting keyed on CF-Connecting-IP (P0.2, research run 3 + 7)
 
 # Deferred — uncomment as later phases land:
 # kokoro==0.7.16           # Phase 2 (offline TTS fallback)

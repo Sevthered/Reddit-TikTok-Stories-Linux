@@ -35,7 +35,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
 from core.db import Db, SlotRow
@@ -51,7 +51,9 @@ from core.schedule import (
     set_override,
 )
 from core.notify import Notifier, NotifierError
+from webapp.backend import settings
 from webapp.backend.deps import get_db
+from webapp.backend.rate_limit import limiter
 
 log = logging.getLogger("webapp.schedule")
 
@@ -303,7 +305,8 @@ def get_slots(db: Db = Depends(get_db)) -> SlotsOut:
 
 
 @router.post("/slots", response_model=PutResult, status_code=201)
-def create_slot(payload: CreateSlotIn, db: Db = Depends(get_db)) -> PutResult:
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
+def create_slot(request: Request, payload: CreateSlotIn, db: Db = Depends(get_db)) -> PutResult:
     inst = payload.instance
     if not _INSTANCE_RE.match(inst):
         raise HTTPException(400, detail="instance must be 4 digits")
@@ -346,7 +349,8 @@ def create_slot(payload: CreateSlotIn, db: Db = Depends(get_db)) -> PutResult:
 
 
 @router.put("/slots/{instance}", response_model=PutResult)
-def put_slot(instance: str, payload: UpdateSlotIn,
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
+def put_slot(request: Request, instance: str, payload: UpdateSlotIn,
              db: Db = Depends(get_db)) -> PutResult:
     if not _INSTANCE_RE.match(instance):
         raise HTTPException(400, detail="instance must be 4 digits")
@@ -440,7 +444,8 @@ def put_slot(instance: str, payload: UpdateSlotIn,
 
 
 @router.post("/slots/{instance}/reset", response_model=PutResult)
-def reset_slot(instance: str, db: Db = Depends(get_db)) -> PutResult:
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
+def reset_slot(request: Request, instance: str, db: Db = Depends(get_db)) -> PutResult:
     """Clear every behavior / notification override for the slot. Times +
     auto_approve stay on the slot row (they ARE the defaults in the new
     model; to reset those, DELETE + POST-recreate)."""
@@ -455,7 +460,8 @@ def reset_slot(instance: str, db: Db = Depends(get_db)) -> PutResult:
 
 
 @router.delete("/slots/{instance}", response_model=DeleteResult)
-def delete_slot(instance: str, db: Db = Depends(get_db)) -> DeleteResult:
+@limiter.limit(settings.RATE_LIMIT_DEFAULT)
+def delete_slot(request: Request, instance: str, db: Db = Depends(get_db)) -> DeleteResult:
     """Remove a slot entirely. Helper stops+disables both timers and
     wipes drop-in dirs. Config keys + slots row deleted. Any pending
     manifest is removed and a Telegram DM lists orphaned post_ids so
