@@ -15,6 +15,12 @@ Environment=TZ=Europe/Madrid
 Environment=PYTHONUNBUFFERED=1
 Environment=OMP_NUM_THREADS=4
 Environment=PLAYWRIGHT_BROWSERS_PATH=/srv/tiktok/app/.playwright
+# See tiktok-slot-upload@.service -- ProtectHome=yes breaks Chrome-for-Testing's
+# crashpad handshake (default --database path resolves under $HOME,
+# which ProtectHome makes inaccessible). Redirect HOME instead of
+# dropping the hardening -- bugs/2026-07-03-upload-protecthome-crashpad-crash.
+Environment=HOME=/srv/tiktok/app/.chromium-home
+ExecStartPre=/usr/bin/mkdir -p /srv/tiktok/app/.chromium-home
 ExecStart=/srv/tiktok/app/.venv/bin/python -u pipeline/upload_worker.py
 StandardOutput=journal
 StandardError=journal
@@ -35,6 +41,7 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
 
 # Resource limits (R3.1). Same reasoning as tiktok-slot-upload@.service.
+# Confirmed NOT implicated in the ProtectHome crash (isolated via bisection).
 MemoryMax=3G
 CPUQuota=400%
 TasksMax=256

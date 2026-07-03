@@ -14,6 +14,16 @@ Environment=DISPLAY=:99
 Environment=TZ=Europe/Madrid
 Environment=PYTHONUNBUFFERED=1
 Environment=PLAYWRIGHT_BROWSERS_PATH=/srv/tiktok/app/.playwright
+# ProtectHome=yes makes $HOME (/home/christian) fully inaccessible.
+# Chrome-for-Testing's crashpad handler resolves its default --database
+# path under $HOME; with $HOME unreadable that resolution silently
+# fails, the handler launches without a valid database, the IPC
+# handshake breaks, and Chromium dies with SIGTRAP ("chrome_crashpad_handler:
+# --database is required"). Redirect HOME to a writable path outside
+# /home so ProtectHome stays intact -- see
+# bugs/2026-07-03-upload-protecthome-crashpad-crash.
+Environment=HOME=/srv/tiktok/app/.chromium-home
+ExecStartPre=/usr/bin/mkdir -p /srv/tiktok/app/.chromium-home
 TimeoutStartSec=15min
 ExecStart=/srv/tiktok/app/.venv/bin/python -u scripts/slot.py upload --instance %i
 StandardOutput=journal
@@ -37,7 +47,8 @@ CapabilityBoundingSet=
 
 # Resource limits (R3.1). Generous backstop -- headed Chromium's real
 # peak was never measured, so this isn't tuned tight. LimitNOFILE
-# deliberately left unset (see tiktok-slot-render@.service).
+# deliberately left unset (see tiktok-slot-render@.service). Confirmed
+# NOT implicated in the ProtectHome crash above (isolated via bisection).
 MemoryMax=3G
 CPUQuota=400%
 TasksMax=256
