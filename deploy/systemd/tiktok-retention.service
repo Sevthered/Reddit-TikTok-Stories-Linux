@@ -28,3 +28,9 @@ RestrictRealtime=yes
 RestrictAddressFamilies=AF_UNIX
 CapabilityBoundingSet=
 ReadWritePaths=/srv/tiktok/app/data
+
+# Resource limits (R3.1). Short-lived, lightweight file/DB cleanup.
+MemoryMax=256M
+CPUQuota=50%
+TasksMax=32
+LimitNOFILE=2048

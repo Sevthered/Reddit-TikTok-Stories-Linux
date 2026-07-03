@@ -46,5 +46,13 @@ RestrictRealtime=yes
 RestrictAddressFamilies=AF_UNIX
 CapabilityBoundingSet=
 
+# Resource limits (R3.1). The X server itself is tiny (~13MB observed)
+# -- generous limit is a pure runaway/leak backstop, not a tuned
+# ceiling. LimitNOFILE deliberately left unset (systemd default is
+# already generous; this unit doesn't need tuning either way).
+MemoryMax=512M
+CPUQuota=50%
+TasksMax=64
+
 [Install]
 WantedBy=multi-user.target

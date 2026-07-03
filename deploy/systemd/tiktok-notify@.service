@@ -28,3 +28,9 @@ LockPersonality=yes
 RestrictRealtime=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
+
+# Resource limits (R3.1). Trivial one-shot Telegram-send script.
+MemoryMax=128M
+CPUQuota=25%
+TasksMax=16
+LimitNOFILE=2048

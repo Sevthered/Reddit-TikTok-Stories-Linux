@@ -40,3 +40,14 @@ LockPersonality=yes
 RestrictRealtime=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
+
+# Resource limits (R3.1). Generous backstop, not a tuned ceiling -- only
+# one real render's peak (1.4GB) is known against a 16GB host; MemoryMax
+# leaves 10GB+ headroom for OS/other units rather than anchoring tight
+# to that single sample. CPUQuota=600% (6/8 cores) so legitimate
+# whisper/ffmpeg multithreading during a real 44-minute render isn't
+# throttled. LimitNOFILE deliberately left unset -- Chromium/Playwright
+# want systemd's generous default, not a lower explicit cap.
+MemoryMax=6G
+CPUQuota=600%
+TasksMax=512

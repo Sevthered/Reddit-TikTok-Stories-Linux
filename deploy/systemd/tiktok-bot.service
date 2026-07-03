@@ -38,5 +38,12 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
 ReadWritePaths=/srv/tiktok/app/data /srv/tiktok/app/logs
 
+# Resource limits (R3.1). Sized against observed steady-state (~22MB,
+# 1 task) with real headroom.
+MemoryMax=256M
+CPUQuota=50%
+TasksMax=32
+LimitNOFILE=2048
+
 [Install]
 WantedBy=multi-user.target

@@ -30,3 +30,9 @@ RestrictRealtime=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
 ReadWritePaths=/srv/tiktok/app/data /srv/tiktok/app/logs
+
+# Resource limits (R3.1). Short-lived, lightweight DB/API-check script.
+MemoryMax=256M
+CPUQuota=50%
+TasksMax=32
+LimitNOFILE=2048

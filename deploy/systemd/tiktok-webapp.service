@@ -39,5 +39,13 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
 ReadWritePaths=/srv/tiktok/app /etc/tiktok
 
+# Resource limits (R3.1). Sized against observed steady-state (~66MB,
+# 10 tasks) with real headroom -- a runaway leak or fork-bomb should
+# hit these before starving render/upload units on the same host.
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=64
+LimitNOFILE=4096
+
 [Install]
 WantedBy=multi-user.target
