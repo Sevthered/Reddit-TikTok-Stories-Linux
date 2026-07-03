@@ -109,13 +109,19 @@ if not CSRF_SECRET:
             "WEBAPP_CSRF_SECRET via systemd EnvironmentFile= for prod."
         )
 
-# Rate limiting (P0.2, research runs 3 + 7). Global default applied to
-# every route via slowapi's SlowAPIMiddleware — protects against
-# authenticated abuse and accidental client loops, complementing (not
-# replacing) the Cloudflare edge Rate Limiting Rule in front of the
-# Tunnel. Solo-operator scale: generous enough that normal dashboard
-# polling never trips it, tight enough to blunt a runaway script.
+# Rate limiting (P0.2, research runs 3 + 7). Applied per-route via
+# @limiter.limit() decorators (see webapp/backend/rate_limit.py's
+# docstring for why the middleware-based approach doesn't work against
+# this FastAPI version) — protects against authenticated abuse and
+# accidental client loops, complementing (not replacing) the
+# Cloudflare edge Rate Limiting Rule in front of the Tunnel.
+#
+# Two tiers: mutating routes get the tighter default; read routes get
+# a higher ceiling (R2.3) since the fastest UI poll observed is every
+# 3s (~20/min for a single tab) -- 300/min covers several open tabs
+# with room to spare while still bounding a genuine flood.
 RATE_LIMIT_DEFAULT: str = os.environ.get("WEBAPP_RATE_LIMIT_DEFAULT", "120/minute")
+RATE_LIMIT_READ_DEFAULT: str = os.environ.get("WEBAPP_RATE_LIMIT_READ_DEFAULT", "300/minute")
 
 if DEV_MODE:
     # SvelteKit dev server originates its own /api proxies with its Host,

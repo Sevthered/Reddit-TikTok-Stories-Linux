@@ -297,7 +297,8 @@ def _notify_orphans(instance: str, orphan_post_ids: list[str]) -> None:
 
 
 @router.get("/slots", response_model=SlotsOut)
-def get_slots(db: Db = Depends(get_db)) -> SlotsOut:
+@limiter.limit(settings.RATE_LIMIT_READ_DEFAULT)
+def get_slots(request: Request, db: Db = Depends(get_db)) -> SlotsOut:
     return SlotsOut(
         slots=[_slot_view(inst, db) for inst in known_instances(db)],
         helper_available=_helper_available(),

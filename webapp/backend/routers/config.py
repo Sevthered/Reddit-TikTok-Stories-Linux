@@ -61,7 +61,8 @@ class TomlIn(BaseModel):
 
 
 @router.get("/toml", response_model=TomlOut)
-def get_toml() -> TomlOut:
+@limiter.limit(settings.RATE_LIMIT_READ_DEFAULT)
+def get_toml(request: Request) -> TomlOut:
     path = settings.CONFIG_PATH
     if not path.exists():
         raise HTTPException(500, detail=f"{path} missing")
@@ -205,7 +206,8 @@ def _parse_env(text: str) -> list[_EnvLine]:
 
 
 @router.get("/env", response_model=EnvOut)
-def get_env() -> EnvOut:
+@limiter.limit(settings.RATE_LIMIT_READ_DEFAULT)
+def get_env(request: Request) -> EnvOut:
     path = settings.ENV_PATH
     if not path.exists():
         return EnvOut(path=str(path), entries=[])

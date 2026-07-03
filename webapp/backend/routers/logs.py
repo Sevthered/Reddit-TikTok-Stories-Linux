@@ -26,6 +26,8 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.sse import EventSourceResponse
 
+from webapp.backend import settings
+from webapp.backend.rate_limit import limiter
 from webapp.backend.schemas import LogName, LogTailOut
 
 log = logging.getLogger("webapp.routers.logs")
@@ -71,7 +73,9 @@ def _journal_tail(unit: str, lines: int) -> list[str]:
 
 
 @router.get("/{name}/tail", response_model=LogTailOut)
+@limiter.limit(settings.RATE_LIMIT_READ_DEFAULT)
 def tail(
+    request: Request,
     name: LogName,
     lines: int = Query(default=200, ge=1, le=5000),
     stream: Literal["stdout", "stderr"] = Query(default="stderr"),
@@ -156,9 +160,10 @@ async def _follow(unit: str, request: Request):
 
 
 @router.get("/{name}/stream")
+@limiter.limit(settings.RATE_LIMIT_READ_DEFAULT)
 async def stream_log(
-    name: LogName,
     request: Request,
+    name: LogName,
     stream: Literal["stdout", "stderr"] = Query(default="stderr"),
 ) -> EventSourceResponse:
     unit = _unit_for(name)

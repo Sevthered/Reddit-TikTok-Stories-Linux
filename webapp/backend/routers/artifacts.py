@@ -48,6 +48,11 @@ def _row(post_id: str, db: Db) -> RenderRow:
     return row
 
 
+# No rate limit on these two (R2.3): a <video> player fires many HTTP
+# Range requests per playback/scrub, and a per-minute cap sized for
+# normal API polling would break video preview unpredictably. Treated
+# like /health -- read-only, already behind Zero Trust + the path-
+# traversal guard above.
 @router.get("/video/{post_id}")
 def get_video(post_id: str, db: Db = Depends(get_db)) -> FileResponse:
     row = _row(post_id, db)

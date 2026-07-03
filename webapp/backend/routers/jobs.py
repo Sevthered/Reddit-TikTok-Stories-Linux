@@ -80,11 +80,13 @@ def _mgr(request: Request) -> JobManager:
 
 
 @router.get("", response_model=list[JobOut])
+@limiter.limit(settings.RATE_LIMIT_READ_DEFAULT)
 def list_jobs(request: Request) -> list[JobOut]:
     return [JobOut.from_job(j) for j in _mgr(request).list()]
 
 
 @router.get("/{job_id}", response_model=JobOut)
+@limiter.limit(settings.RATE_LIMIT_READ_DEFAULT)
 def get_job(job_id: str, request: Request) -> JobOut:
     j = _mgr(request).get(job_id)
     if j is None:
@@ -160,6 +162,7 @@ def _sse(event: str, data: str) -> str:
 
 
 @router.get("/{job_id}/stream")
+@limiter.limit(settings.RATE_LIMIT_READ_DEFAULT)
 async def stream_job(job_id: str, request: Request) -> EventSourceResponse:
     mgr = _mgr(request)
     job = mgr.get(job_id)

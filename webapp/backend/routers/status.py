@@ -5,13 +5,14 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from core.agents import list_agent_status
 from core.db import Db
 from pipeline.upload import sessionid_expires_in_days
 from webapp.backend import settings
 from webapp.backend.deps import get_db
+from webapp.backend.rate_limit import limiter
 from webapp.backend.schemas import AgentStatus, StatusOut
 
 log = logging.getLogger("webapp.status")
@@ -21,7 +22,8 @@ router = APIRouter(tags=["status"])
 
 
 @router.get("/status", response_model=StatusOut)
-async def status(db: Db = Depends(get_db)) -> StatusOut:
+@limiter.limit(settings.RATE_LIMIT_READ_DEFAULT)
+async def status(request: Request, db: Db = Depends(get_db)) -> StatusOut:
     # systemctl subprocess in a threadpool so we don't block the loop.
     snapshot = await asyncio.to_thread(list_agent_status)
     agents = [
