@@ -8,6 +8,7 @@
 #   sudo bash scripts/install_systemd.sh uninstall
 #   bash scripts/install_systemd.sh kickstart tiktok-webapp
 #   bash scripts/install_systemd.sh status
+#   bash scripts/install_systemd.sh security      # systemd-analyze security, all units (R3.2)
 #
 # The install target copies units under /etc/systemd/system/, the polkit
 # rule under /etc/polkit-1/rules.d/, runs `systemctl daemon-reload`, and
@@ -43,6 +44,21 @@ TIMERS=(
 SEED_SLOTS=(
   "0000:23:30:00:00"
   "1200:11:30:12:00"
+)
+
+# All 9 service units, for `systemd-analyze security` (R3.2). Templated
+# units need a concrete instance name — 0000 is always seeded; `x` is an
+# arbitrary notify@ instance since it takes an argument, not a time.
+UNITS_SECURITY=(
+  tiktok-webapp.service
+  tiktok-bot.service
+  tiktok-confirm.service
+  tiktok-retention.service
+  tiktok-xvfb.service
+  "tiktok-notify@x.service"
+  "tiktok-slot-render@0000.service"
+  "tiktok-slot-upload@0000.service"
+  tiktok-upload.service
 )
 
 need_root() {
@@ -227,6 +243,17 @@ EOF
   echo "   wrote $file (OnCalendar=*-*-* ${hhmm}:00 Europe/Madrid)"
 }
 
+# Read-only. Standing R3.2 discipline: run after every systemd change,
+# before considering it done — see [[decisions/2026-07-03-systemd-analyze-security-discipline]].
+cmd_security() {
+  local u line
+  for u in "${UNITS_SECURITY[@]}"; do
+    printf '%-42s ' "$u"
+    line=$(systemd-analyze security "$u" 2>/dev/null | tail -1)
+    echo "${line:-n/a (unit not installed?)}"
+  done
+}
+
 cmd_kickstart() {
   local unit="${1:-}"
   [[ -z "$unit" ]] && { echo "kickstart <unit>"; exit 2; }
@@ -240,6 +267,7 @@ case "${1:-help}" in
   migrate-slots)   shift; cmd_migrate_slots "$@";;
   uninstall)       shift; cmd_uninstall "$@";;
   status)          shift; cmd_status "$@";;
+  security)        shift; cmd_security "$@";;
   kickstart)       shift; cmd_kickstart "$@";;
   help|*)
     grep -E '^# ' "$0" | sed 's/^# \?//'

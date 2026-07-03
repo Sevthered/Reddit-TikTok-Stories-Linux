@@ -27,7 +27,7 @@ TIMERS     := tiktok-confirm.timer tiktok-retention.timer \
 ALL_UNITS  := $(addsuffix .service,$(PERSISTENT)) tiktok-webapp.service $(TIMERS)
 
 .DEFAULT_GOAL := help
-.PHONY: help install uninstall up down reload status build-spa \
+.PHONY: help install uninstall up down reload status security build-spa \
         web-up web-down web-status \
         dev dev-webapp dev-bot dev-frontend \
         kickstart-webapp kickstart-bot kickstart-upload kickstart-confirm \
@@ -46,6 +46,7 @@ help:
 	@echo "    make down             stop bot+xvfb"
 	@echo "    make reload           restart bot"
 	@echo "    make status           unit + timer state"
+	@echo "    make security         systemd-analyze security, all units (R3.2)"
 	@echo "    make kickstart-<svc>  restart one (webapp|bot|upload|confirm)"
 	@echo ""
 	@echo "  Webapp (off-by-default; run on demand while SSH'd in):"
@@ -106,6 +107,9 @@ status:
 	@systemctl --no-pager status $(ALL_UNITS) || true
 	@echo "---"
 	@echo "port 8765:"; ss -tlnp 2>/dev/null | grep ':8765' || echo "  (nothing listening)"
+
+security:
+	@bash $(INSTALL_SH) security
 
 kickstart-webapp:  ; @bash $(INSTALL_SH) kickstart tiktok-webapp
 kickstart-bot:     ; @bash $(INSTALL_SH) kickstart tiktok-bot
