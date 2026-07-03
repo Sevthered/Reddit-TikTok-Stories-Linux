@@ -151,7 +151,17 @@ class JobManager:
         await lock.acquire()
         try:
             argv = [str(self._python), "-u", *_KIND_ARGV[kind], *args]
-            env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+            # Chrome-for-Testing's crashpad handler resolves its --database
+            # path under $HOME; under this unit's ProtectHome=yes, $HOME is
+            # inaccessible and the handshake breaks with SIGTRAP (same bug
+            # as the systemd upload units, see
+            # wiki/bugs/2026-07-03-upload-protecthome-crashpad-crash.md).
+            # Jobs here inherit tiktok-webapp.service's environment, so
+            # they need the same redirect, independently of the systemd
+            # fix on the upload-specific units.
+            chromium_home = self._repo_root / ".chromium-home"
+            chromium_home.mkdir(exist_ok=True)
+            env = {**os.environ, "PYTHONUNBUFFERED": "1", "HOME": str(chromium_home)}
             log.info("job start kind=%s argv=%s", kind, argv)
             proc = await asyncio.create_subprocess_exec(
                 *argv,
