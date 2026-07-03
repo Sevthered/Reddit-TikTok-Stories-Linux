@@ -13,14 +13,29 @@ RestartSec=2
 StandardOutput=journal
 StandardError=journal
 
-# Hardening (P0.5, research run 7). Can be the strictest unit in the
-# fleet: no app-dir access at all, `-nolisten tcp` means no network
-# needed either -- only a unix socket for the X11 render/upload units
-# to connect to. Deliberately NO PrivateTmp (same reason as
+# Hardening (P0.5, research run 7). `-nolisten tcp` means no network
+# needed -- only a unix socket for the X11 render/upload units to
+# connect to. Deliberately NO PrivateTmp (same reason as
 # render/upload/upload-legacy): the /tmp/.X11-unix/X99 socket this
 # service creates must stay visible to those units' real /tmp.
+#
+# MUST be ProtectSystem=full, not strict -- verified empirically.
+# strict makes Xvfb crash ~12s after a clean start with "Could not
+# create lock file in /tmp/.tX99-lock" (bisected: ProtectSystem=strict
+# alone reproduces it; every other directive is fine in isolation).
+#
+# A second, independent gotcha found during rollout: even with `full`,
+# the real tiktok-xvfb.service unit kept crash-looping on production's
+# :99 specifically, while a brand-new unit name with the identical
+# config was rock solid on the same display. Root cause: stale
+# systemd-internal state (private mount-namespace/cgroup remnants)
+# left over from an earlier rapid crash-loop under the broken `strict`
+# config -- NOT the display number or this config. `systemctl
+# daemon-reexec` cleared it; a normal `daemon-reload` does not. If this
+# unit is ever hardened again after another crash-loop, try
+# daemon-reexec before assuming the new config is wrong.
 NoNewPrivileges=yes
-ProtectSystem=strict
+ProtectSystem=full
 ProtectHome=yes
 PrivateDevices=yes
 ProtectKernelModules=yes
