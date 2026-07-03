@@ -7,6 +7,17 @@ ExecStart=/usr/bin/aide --config=/etc/aide/aide.conf --check
 StandardOutput=journal
 StandardError=journal
 
+# AIDE --check exit status is a bitmask (1=new, 2=removed, 4=changed,
+# range 0-7), not a pass/fail signal -- verified against upstream aide(1).
+# Any value 0-7 means the check ran and produced a report; only 14-19
+# (config/IO/version errors) are real failures. Without this, systemd's
+# default (only exit 0 = success) marks the unit "failed" on every
+# legitimate, expected diff (e.g. a deploy touching /etc/systemd/system/),
+# polluting `systemctl status`/journal health for something that isn't
+# actually broken. Found this the hard way on the first real post-deploy
+# run (exit 7, unit showed failed for a completely benign diff).
+SuccessExitStatus=0 1 2 3 4 5 6 7
+
 # Deliberately no hardening directives here, same rationale as
 # tiktok-lynis-audit.service and tiktok-rkhunter-scan.service: a real AIDE
 # check needs broad read access across the watched system paths --
