@@ -20,6 +20,7 @@ INSTALL_SH := $(REPO)/scripts/install_systemd.sh
 
 PERSISTENT := tiktok-xvfb tiktok-bot
 TIMERS     := tiktok-confirm.timer tiktok-retention.timer tiktok-secrets-backup.timer tiktok-lynis-audit.timer \
+              tiktok-rkhunter-scan.timer \
               tiktok-slot-render@0000.timer tiktok-slot-upload@0000.timer \
               tiktok-slot-render@1200.timer tiktok-slot-upload@1200.timer
 ALL_UNITS  := $(addsuffix .service,$(PERSISTENT)) tiktok-webapp.service $(TIMERS)
@@ -31,7 +32,7 @@ ALL_UNITS  := $(addsuffix .service,$(PERSISTENT)) tiktok-webapp.service $(TIMERS
         kickstart-webapp kickstart-bot kickstart-upload kickstart-confirm \
         logs logs-webapp logs-bot logs-upload logs-confirm logs-xvfb \
         deps deps-py deps-node clean-logs doctor \
-        db-upgrade db-revision secrets-backup lynis-audit
+        db-upgrade db-revision secrets-backup lynis-audit rkhunter-scan
 
 help:
 	@echo "Automated-TikTok-Upload — make targets"
@@ -48,6 +49,7 @@ help:
 	@echo "    make security         systemd-analyze security, all units (R3.2)"
 	@echo "    make secrets-backup   trigger the nightly age+curl backup now (task #7)"
 	@echo "    make lynis-audit      trigger the weekly Lynis security audit now (task #9)"
+	@echo "    make rkhunter-scan    trigger the weekly rkhunter malware scan now (task #13)"
 	@echo "    make kickstart-<svc>  restart one (webapp|bot|upload|confirm)"
 	@echo ""
 	@echo "  DB migrations (Alembic, task #4):"
@@ -122,6 +124,10 @@ secrets-backup:
 lynis-audit:
 	@sudo systemctl start tiktok-lynis-audit.service
 	@echo "→ audit run, see /var/log/lynis-report.dat and /var/log/lynis.log"
+
+rkhunter-scan:
+	@sudo systemctl start tiktok-rkhunter-scan.service
+	@echo "→ scan run, see /var/log/rkhunter.log"
 
 # ---- db migrations (Alembic, task #4/#16) ------------------------------
 
