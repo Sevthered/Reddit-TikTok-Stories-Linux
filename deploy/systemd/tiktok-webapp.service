@@ -38,12 +38,19 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
 ReadWritePaths=/srv/tiktok/app /etc/tiktok
 
-# Resource limits (R3.1). Sized against observed steady-state (~66MB,
-# 10 tasks) with real headroom -- a runaway leak or fork-bomb should
-# hit these before starving render/upload units on the same host.
-MemoryMax=512M
-CPUQuota=100%
-TasksMax=64
+# Resource limits (R3.1). Originally sized for uvicorn steady-state
+# (~66MB, 10 tasks). RAISED to the tiktok-slot-upload@ envelope because
+# the dashboard/bot "Upload" button spawns a headed Chromium as a
+# JobManager child *inside this cgroup* (webapp/backend/jobs.py) — the
+# uvicorn-sized caps strangled it: TasksMax=64 killed it at
+# `pthread_create: Resource temporarily unavailable`, and 512M would OOM
+# the browser. These match the proven scheduled-upload unit so a
+# webapp-triggered upload has the same room. Superseded by the k8s
+# migration (per-pod requests/limits). See wiki bug note
+# 2026-07-04-webapp-cgroup-caps-strangle-upload-browser.
+MemoryMax=3G
+CPUQuota=400%
+TasksMax=256
 LimitNOFILE=4096
 
 [Install]
