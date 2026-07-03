@@ -8,6 +8,7 @@ Or under the tiktok-webapp.service systemd unit:
 from __future__ import annotations
 
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -75,6 +76,26 @@ _CSRF_EXEMPT_PATHS = {"/api/csrf"}
 # deploy script and systemd health checks — that path never traverses
 # the Tunnel, so it never carries the header.
 _CF_ACCESS_EXEMPT_PATHS = {"/api/health"}
+
+
+def _is_trusted_internal(request: Request) -> bool:
+    """True when the caller presents the shared internal service token.
+
+    The Telegram bot reaches this API over loopback (core/webapp_client.py)
+    to reuse the JobManager locks — it never traverses the Cloudflare Tunnel,
+    so it carries neither a Cf-Access-Jwt-Assertion nor a CSRF token. Rather
+    than trust the network path (the exact thing R2.4 removed — see
+    wiki/bugs/2026-07-03-webapp-lan-bypass-firewall.md), it authenticates with
+    a bearer secret from /etc/tiktok/environment that both services read. A
+    misconfigured Tunnel reaching the origin still lacks the secret, so the
+    fail-closed guarantee holds. When WEBAPP_INTERNAL_TOKEN is unset the
+    internal path is simply disabled — no bypass, behavior unchanged.
+    """
+    if not settings.INTERNAL_TOKEN:
+        return False
+    return secrets.compare_digest(
+        request.headers.get("x-internal-token", ""), settings.INTERNAL_TOKEN,
+    )
 
 
 @asynccontextmanager
@@ -165,6 +186,10 @@ async def cf_access_middleware(request: Request, call_next):
     # every method, not just mutations — this is authN, not CSRF.
     if settings.DEV_MODE or request.url.path in _CF_ACCESS_EXEMPT_PATHS:
         return await call_next(request)
+    # Trusted internal caller (bot over loopback) authenticates by service
+    # token instead of a Cf-Access JWT it can never obtain off the Tunnel.
+    if _is_trusted_internal(request):
+        return await call_next(request)
     token = request.headers.get("cf-access-jwt-assertion")
     if not token:
         log.warning("missing Cf-Access-Jwt-Assertion on %s %s", request.method, request.url.path)
@@ -188,6 +213,9 @@ async def csrf_protect_middleware(request: Request, call_next):
     if (
         request.method in _CSRF_PROTECTED_METHODS
         and request.url.path not in _CSRF_EXEMPT_PATHS
+        # The bot is a non-browser caller — CSRF (a browser-ambient-credential
+        # defense) doesn't apply; its service token is the authN.
+        and not _is_trusted_internal(request)
     ):
         csrf_protect = CsrfProtect()
         try:

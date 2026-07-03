@@ -109,6 +109,17 @@ if not CSRF_SECRET:
             "WEBAPP_CSRF_SECRET via systemd EnvironmentFile= for prod."
         )
 
+# Internal service token — authenticates trusted loopback callers (the
+# Telegram bot via core/webapp_client.py) that reach this API off the
+# Cloudflare Tunnel and thus carry neither a Cf-Access-Jwt-Assertion nor a
+# CSRF token. When set (via /etc/tiktok/environment, shared by the webapp and
+# bot units), a request bearing X-Internal-Token: <this> skips the Cf-Access
+# and CSRF checks — see app._is_trusted_internal. When UNSET the internal path
+# is disabled entirely: no bypass, middleware behaves exactly as before. A
+# bearer secret keeps the fail-closed guarantee (a misconfigured Tunnel
+# reaching the origin still lacks it) rather than trusting the network path.
+INTERNAL_TOKEN: str = os.environ.get("WEBAPP_INTERNAL_TOKEN", "")
+
 # Rate limiting (P0.2, research runs 3 + 7). Applied per-route via
 # @limiter.limit() decorators (see webapp/backend/rate_limit.py's
 # docstring for why the middleware-based approach doesn't work against

@@ -32,6 +32,14 @@ class WebappClient:
         # 127.0.0.1 via /etc/hosts doesn't get rejected.
         self._session = requests.Session()
         self._session.headers.update({"Host": "127.0.0.1:8765"})
+        # Cf-Access verification + CSRF now guard the webapp on every method
+        # (R2.4). This loopback caller carries neither, so it authenticates as
+        # a trusted internal service with a shared token from the environment
+        # (WEBAPP_INTERNAL_TOKEN in /etc/tiktok/environment). Absent → calls
+        # 403 exactly as an unauthenticated caller should.
+        _tok = os.environ.get("WEBAPP_INTERNAL_TOKEN", "")
+        if _tok:
+            self._session.headers["X-Internal-Token"] = _tok
 
     def _get(self, path: str) -> Any:
         url = f"{self.base_url}{path}"
