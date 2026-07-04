@@ -1,0 +1,25 @@
+# Expose the Prometheus UI at prometheus.mk8s.lan (via ingress-nginx @ 10.10.10.20),
+# same pattern as grafana.mk8s.lan. LAN-only, unauthenticated (read-only metrics,
+# behind pfSense) — matches the Grafana exposure posture; basic-auth is a
+# follow-up (task #28). Needs a pfSense DNS host-override
+# prometheus.mk8s.lan -> 10.10.10.20.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prometheus
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: kube-prometheus-stack
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: prometheus.mk8s.lan
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: monitoring-kube-prometheus-prometheus
+                port:
+                  number: 9090

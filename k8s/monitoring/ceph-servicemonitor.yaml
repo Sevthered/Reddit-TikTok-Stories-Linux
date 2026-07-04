@@ -1,0 +1,25 @@
+# Feed Ceph metrics (rook-ceph-mgr Prometheus exporter, :9283/metrics) into the
+# kube-prometheus-stack Prometheus. The stack's Prometheus only selects
+# ServiceMonitors labelled `release: monitoring` (serviceMonitorSelector), with
+# an all-namespaces namespaceSelector — hence the label + the rook-ceph target.
+# Rook's CephCluster.monitoring is unset, so we own this ServiceMonitor rather
+# than letting Rook create an unlabelled one Prometheus would ignore.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: rook-ceph-mgr
+  namespace: rook-ceph
+  labels:
+    release: monitoring
+    app.kubernetes.io/part-of: rook-ceph
+spec:
+  namespaceSelector:
+    matchNames: [rook-ceph]
+  selector:
+    matchLabels:
+      app: rook-ceph-mgr
+      rook_cluster: rook-ceph
+  endpoints:
+    - port: http-metrics   # rook-ceph-mgr svc port name for :9283
+      path: /metrics
+      interval: 30s
