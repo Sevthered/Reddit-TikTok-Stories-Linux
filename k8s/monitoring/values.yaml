@@ -38,10 +38,22 @@ grafana:
   ingress:
     enabled: true
     ingressClassName: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: internal-ca   # internal-CA TLS (task #28)
     hosts:
       - grafana.mk8s.lan
-  # default admin password (change later); username admin
-  adminPassword: mk8s-grafana
+    tls:
+      - hosts: [grafana.mk8s.lan]
+        secretName: grafana-mk8s-tls
+  # Admin creds now sourced from the grafana-admin-credentials Secret (task #28) —
+  # no plaintext password in values/git. Grafana keeps its native login; TLS above
+  # stops the login being sent cleartext on the LAN. Retrieve the password with:
+  #   kubectl get secret grafana-admin-credentials -n monitoring \
+  #     -o jsonpath='{.data.admin-password}' | base64 -d
+  admin:
+    existingSecret: grafana-admin-credentials
+    userKey: admin-user
+    passwordKey: admin-password
 
 # node-exporter + kube-state-metrics keep defaults (light).
 # Reduce Prometheus scrape footprint a touch:

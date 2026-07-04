@@ -1,8 +1,8 @@
-# Expose the Prometheus UI at prometheus.mk8s.lan (via ingress-nginx @ 10.10.10.20),
-# same pattern as grafana.mk8s.lan. LAN-only, unauthenticated (read-only metrics,
-# behind pfSense) — matches the Grafana exposure posture; basic-auth is a
-# follow-up (task #28). Needs a pfSense DNS host-override
-# prometheus.mk8s.lan -> 10.10.10.20.
+# Expose the Prometheus UI at prometheus.mk8s.lan (via ingress-nginx @ 10.10.10.20).
+# Hardened in task #28: internal-CA TLS + basic-auth (Prometheus has no native
+# auth). Creds in Secret basic-auth (htpasswd, key `auth`) — retrieve plaintext:
+#   kubectl get secret basic-auth-cred -n monitoring -o jsonpath='{.data.password}' | base64 -d
+# Needs pfSense DNS host-override prometheus.mk8s.lan -> 10.10.10.20.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -10,8 +10,16 @@ metadata:
   namespace: monitoring
   labels:
     app.kubernetes.io/part-of: kube-prometheus-stack
+  annotations:
+    cert-manager.io/cluster-issuer: internal-ca
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: basic-auth
+    nginx.ingress.kubernetes.io/auth-realm: "Prometheus - Authentication Required"
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts: [prometheus.mk8s.lan]
+      secretName: prometheus-mk8s-tls
   rules:
     - host: prometheus.mk8s.lan
       http:
