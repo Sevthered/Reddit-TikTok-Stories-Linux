@@ -4,7 +4,7 @@
 
 image:
   repo: 10.10.10.21:5000/tiktok/app
-  tag: "0.1.1"   # rebuilt with today's fixes (token, DISPLAY, content-check, settle-wait)
+  tag: "0.1.2"   # Phase 7 prep: env-driven CONFIG_PATH, litestream baked in, config-seed init
   pullPolicy: IfNotPresent
 
 # Every data-touching pod pins to ONE node (SQLite single-writer + shared RWO
