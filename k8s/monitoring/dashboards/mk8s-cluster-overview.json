@@ -63,7 +63,7 @@
       "fieldConfig": {"defaults": {"thresholds": {"steps": [
         {"color": "red", "value": null}, {"color": "yellow", "value": 1}, {"color": "green", "value": 2}]}}},
       "options": {"colorMode": "value", "graphMode": "none"},
-      "targets": [{"expr": "tiktok_posts_today", "refId": "A"}]
+      "targets": [{"expr": "max(tiktok_posts_today)", "refId": "A"}]
     },
 
     {"type": "row", "title": "Nodes", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5}},
@@ -147,7 +147,7 @@
       "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {
         "0": {"text": "OFF", "color": "red"}, "1": {"text": "ON", "color": "green"}}}]}},
       "options": {"colorMode": "background", "graphMode": "none"},
-      "targets": [{"expr": "tiktok_uploads_enabled", "refId": "A"}]
+      "targets": [{"expr": "max(tiktok_uploads_enabled)", "refId": "A"}]
     },
     {
       "type": "timeseries", "title": "Posts by status",
