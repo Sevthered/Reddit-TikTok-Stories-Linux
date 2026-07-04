@@ -479,6 +479,44 @@ def _wait_content_check_clear(page: Page, timeout_s: float = 480.0) -> bool:
     return False
 
 
+# Text that means TikTok is still uploading/processing the file server-side.
+_PROCESSING_RE = re.compile(
+    r"procesando|processing|subiendo|uploading|cargando", re.I)
+
+
+def _settle_before_publish(page: Page,
+                           min_wait_s: float | None = None,
+                           max_wait_s: float | None = None) -> None:
+    """Wait for TikTok to finish server-side processing of the uploaded video
+    before Publicar. Polls until no "Procesando"/"processing" indicator is
+    visible AND at least `min_wait_s` has elapsed, capped at `max_wait_s`.
+
+    Tunable via env: TIKTOK_PUBLISH_SETTLE_MIN_S (default 60),
+    TIKTOK_PUBLISH_SETTLE_MAX_S (default 180)."""
+    if min_wait_s is None:
+        min_wait_s = float(os.environ.get("TIKTOK_PUBLISH_SETTLE_MIN_S", "60"))
+    if max_wait_s is None:
+        max_wait_s = float(os.environ.get("TIKTOK_PUBLISH_SETTLE_MAX_S", "180"))
+    start = time.time()
+    log.info("settling before publish (min %.0fs, max %.0fs)…", min_wait_s, max_wait_s)
+    while True:
+        elapsed = time.time() - start
+        try:
+            body = page.locator("body").inner_text(timeout=2000)
+        except Exception:
+            body = ""
+        still_processing = bool(_PROCESSING_RE.search(body or ""))
+        if elapsed >= max_wait_s:
+            log.info("settle: reached max %.0fs (processing=%s) — publishing",
+                     max_wait_s, still_processing)
+            break
+        if elapsed >= min_wait_s and not still_processing:
+            log.info("settle: processing cleared after %.0fs — publishing", elapsed)
+            break
+        page.wait_for_timeout(3000)
+    _screenshot_debug(page, "settled_before_publish")
+
+
 def _click_post(page: Page) -> None:
     btn = page.locator(_SEL_POST_BTN).first
     btn.wait_for(state="visible", timeout=15000)
@@ -498,6 +536,13 @@ def _click_post(page: Page) -> None:
     else:
         _screenshot_debug(page, "publicar_stayed_disabled")
         raise TikTokDOMError("Publicar button never became enabled within 120s")
+    # Let TikTok finish server-side ingest/processing before publishing.
+    # Publicar enabling only means the *upload* reached TikTok; the file is
+    # still transcoding/processing server-side (cover shows "Procesando").
+    # Clicking Publish mid-processing is rejected with "Ha ocurrido un error"
+    # even manually. Wait for the processing indicators to clear (bounded),
+    # plus a floor buffer.
+    _settle_before_publish(page)
     btn.click()
     log.info("clicked Publicar")
     # Give the click a moment to register; some modals appear ~1s later.
