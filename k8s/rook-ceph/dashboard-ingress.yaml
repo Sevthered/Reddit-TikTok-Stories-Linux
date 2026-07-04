@@ -1,8 +1,10 @@
 # Expose the Ceph MGR dashboard at ceph.mk8s.lan. The dashboard serves HTTPS
-# (self-signed) on :8443, so proxy over HTTPS and skip upstream cert verify —
-# the Rook-documented ingress pattern. It has its own login (user `admin`,
-# password in secret rook-ceph-dashboard-password). Needs a pfSense DNS
-# host-override ceph.mk8s.lan -> 10.10.10.20.
+# (self-signed) on :8443, so proxy over HTTPS via backend-protocol. ingress-nginx
+# does NOT verify the upstream cert by default, so the self-signed backend works
+# without a snippet (snippet annotations are disabled on this controller for
+# security). It has its own login (user `admin`, password in secret
+# rook-ceph-dashboard-password). Needs a pfSense DNS host-override
+# ceph.mk8s.lan -> 10.10.10.20.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -10,8 +12,6 @@ metadata:
   namespace: rook-ceph
   annotations:
     nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
-    nginx.ingress.kubernetes.io/server-snippet: |
-      proxy_ssl_verify off;
 spec:
   ingressClassName: nginx
   rules:
