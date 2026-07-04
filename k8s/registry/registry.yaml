@@ -6,13 +6,32 @@
 #
 # Phase-4 scope: stand it up, running + persistent + LAN-reachable. Phase 5
 # wires client trust (k3s containerd registries.yaml + Podman) and does the
-# first push/pull. Runs HTTP for now (internal LAN); TLS + auth are a
-# follow-up (cert-manager internal-ca + htpasswd).
+# first push/pull. TLS + auth added in task #28 (cert-manager internal-ca serving
+# cert + bcrypt htpasswd). Creds: Secrets registry-tls (cert-manager),
+# registry-htpasswd (key `htpasswd`), registry-auth-cred (plaintext for
+# retrieval: kubectl -n registry get secret registry-auth-cred -o
+# jsonpath='{.data.password}' | base64 -d ; user `ci`).
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: registry
+---
+# Serving cert (internal-ca): IP SAN 10.10.10.21 (nodes reach it by IP) + DNS.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: registry-tls
+  namespace: registry
+spec:
+  secretName: registry-tls
+  commonName: registry.mk8s.lan
+  dnsNames: [registry.mk8s.lan]
+  ipAddresses: ["10.10.10.21"]
+  duration: 2160h
+  renewBefore: 360h
+  usages: [server auth]
+  issuerRef: { name: internal-ca, kind: ClusterIssuer, group: cert-manager.io }
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -33,6 +52,8 @@ metadata:
   namespace: registry
 spec:
   replicas: 1
+  strategy:
+    type: Recreate            # RWO ceph-block PVC — never two pods holding it
   selector:
     matchLabels: {app: registry}
   template:
@@ -46,8 +67,16 @@ spec:
             - containerPort: 5000
           env:
             - {name: REGISTRY_STORAGE_DELETE_ENABLED, value: "true"}
+            # TLS (internal-ca serving cert) + bcrypt htpasswd auth (task #28)
+            - {name: REGISTRY_HTTP_TLS_CERTIFICATE, value: /certs/tls.crt}
+            - {name: REGISTRY_HTTP_TLS_KEY, value: /certs/tls.key}
+            - {name: REGISTRY_AUTH, value: htpasswd}
+            - {name: REGISTRY_AUTH_HTPASSWD_REALM, value: "mk8s registry"}
+            - {name: REGISTRY_AUTH_HTPASSWD_PATH, value: /auth/htpasswd}
           volumeMounts:
             - {name: data, mountPath: /var/lib/registry}
+            - {name: certs, mountPath: /certs, readOnly: true}
+            - {name: auth, mountPath: /auth, readOnly: true}
           resources:
             requests: {cpu: 50m, memory: 128Mi}
             limits: {memory: 512Mi}
@@ -55,6 +84,12 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: registry-data
+        - name: certs
+          secret: {secretName: registry-tls}
+        - name: auth
+          secret:
+            secretName: registry-htpasswd
+            items: [{key: htpasswd, path: htpasswd}]
 ---
 apiVersion: v1
 kind: Service

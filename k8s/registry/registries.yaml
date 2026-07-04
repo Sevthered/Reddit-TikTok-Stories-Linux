@@ -1,11 +1,21 @@
-# k3s containerd registry config — trust the in-cluster HTTP registry.
-# Goes to /etc/rancher/k3s/registries.yaml on EACH node, then `systemctl
-# restart k3s` (server) / `k3s-agent` (agent). Tells containerd to pull from
-# 10.10.10.21:5000 over plain HTTP (internal LAN, no TLS yet).
+# k3s containerd registry config — /etc/rancher/k3s/registries.yaml on EACH node,
+# then `systemctl restart k3s` (server) / `k3s-agent` (agent). Task #28: the
+# registry now serves HTTPS + bcrypt htpasswd auth (was plain HTTP).
 #
-# TLS + auth for the registry is a deferred follow-up (task #28); when added,
-# replace this with a `configs:` block (tls + auth) instead of the http mirror.
+# The `password` below is a PLACEHOLDER — the real value is NOT tracked in git.
+# It lives only in the on-node files (mode 600 root) and in the k8s Secret
+# `registry-auth-cred` (ns registry). Retrieve to re-provision a node:
+#   kubectl -n registry get secret registry-auth-cred -o jsonpath='{.data.password}' | base64 -d
+# The CA (internal-ca) is written to /etc/rancher/k3s/registry-ca.crt on each node
+# (public cert, from Secret registry-tls key ca.crt).
 mirrors:
   "10.10.10.21:5000":
     endpoint:
-      - "http://10.10.10.21:5000"
+      - "https://10.10.10.21:5000"
+configs:
+  "10.10.10.21:5000":
+    auth:
+      username: ci
+      password: __FROM_SECRET_registry-auth-cred__   # placeholder; not the real value
+    tls:
+      ca_file: /etc/rancher/k3s/registry-ca.crt
