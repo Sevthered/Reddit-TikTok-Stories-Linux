@@ -1,0 +1,111 @@
+{
+  "title": "TikTok Pipeline",
+  "uid": "tiktok-pipeline",
+  "tags": ["tiktok", "pipeline"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {"from": "now-24h", "to": "now"},
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {"text": "Prometheus", "value": "prometheus"},
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {"type": "row", "title": "Pipeline", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}},
+    {
+      "type": "stat", "title": "Posts today (target 2)",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 1},
+      "fieldConfig": {"defaults": {"thresholds": {"steps": [
+        {"color": "red", "value": null}, {"color": "yellow", "value": 1}, {"color": "green", "value": 2}]}}},
+      "targets": [{"expr": "tiktok_posts_today", "refId": "A"}]
+    },
+    {
+      "type": "stat", "title": "Uploads enabled",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 1},
+      "fieldConfig": {"defaults": {"mappings": [
+        {"type": "value", "options": {"0": {"text": "OFF", "color": "red"}, "1": {"text": "ON", "color": "green"}}}]}},
+      "targets": [{"expr": "tiktok_uploads_enabled", "refId": "A"}]
+    },
+    {
+      "type": "stat", "title": "Time since last upload",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 4, "w": 5, "x": 8, "y": 1},
+      "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"steps": [
+        {"color": "green", "value": null}, {"color": "yellow", "value": 46800}, {"color": "red", "value": 90000}]}}},
+      "targets": [{"expr": "time() - tiktok_last_upload_timestamp_seconds", "refId": "A"}]
+    },
+    {
+      "type": "stat", "title": "Session cookie days left",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 4, "w": 4, "x": 13, "y": 1},
+      "fieldConfig": {"defaults": {"unit": "d", "thresholds": {"steps": [
+        {"color": "red", "value": null}, {"color": "yellow", "value": 3}, {"color": "green", "value": 7}]}}},
+      "targets": [{"expr": "tiktok_sessionid_days_remaining", "refId": "A"}]
+    },
+    {
+      "type": "stat", "title": "Review queue (pending / approved / under-review)",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 4, "w": 7, "x": 17, "y": 1},
+      "targets": [
+        {"expr": "tiktok_pending_review_count", "refId": "A", "legendFormat": "pending"},
+        {"expr": "tiktok_approved_ready_count", "refId": "B", "legendFormat": "approved"},
+        {"expr": "tiktok_under_review_count", "refId": "C", "legendFormat": "under review"}
+      ]
+    },
+    {
+      "type": "timeseries", "title": "Posts by status",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 5},
+      "targets": [{"expr": "tiktok_posts_by_status", "refId": "A", "legendFormat": "{{status}}"}]
+    },
+    {"type": "row", "title": "API (RED)", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 13}},
+    {
+      "type": "timeseries", "title": "Request rate by status",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 14},
+      "fieldConfig": {"defaults": {"unit": "reqps"}},
+      "targets": [{"expr": "sum by (status) (rate(tiktok_api_http_requests_total[5m]))", "refId": "A", "legendFormat": "{{status}}"}]
+    },
+    {
+      "type": "timeseries", "title": "Error ratio (5xx)",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 14},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0}},
+      "targets": [{"expr": "sum(rate(tiktok_api_http_requests_total{status=\"5xx\"}[5m])) / clamp_min(sum(rate(tiktok_api_http_requests_total[5m])), 1)", "refId": "A", "legendFormat": "5xx ratio"}]
+    },
+    {
+      "type": "timeseries", "title": "Latency p50/p95/p99",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 14},
+      "fieldConfig": {"defaults": {"unit": "s"}},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum by (le) (rate(tiktok_api_http_request_duration_seconds_bucket[5m])))", "refId": "A", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.95, sum by (le) (rate(tiktok_api_http_request_duration_seconds_bucket[5m])))", "refId": "B", "legendFormat": "p95"},
+        {"expr": "histogram_quantile(0.99, sum by (le) (rate(tiktok_api_http_request_duration_seconds_bucket[5m])))", "refId": "C", "legendFormat": "p99"}
+      ]
+    },
+    {"type": "row", "title": "CronJobs (kube-state-metrics)", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 22}},
+    {
+      "type": "timeseries", "title": "Failed jobs (ns tiktok)",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 23},
+      "targets": [{"expr": "sum by (job_name) (kube_job_status_failed{namespace=\"tiktok\"})", "refId": "A", "legendFormat": "{{job_name}}"}]
+    },
+    {
+      "type": "timeseries", "title": "Minutes since last CronJob schedule",
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 23},
+      "fieldConfig": {"defaults": {"unit": "s"}},
+      "targets": [{"expr": "time() - kube_cronjob_status_last_schedule_time{namespace=\"tiktok\"}", "refId": "A", "legendFormat": "{{cronjob}}"}]
+    }
+  ]
+}

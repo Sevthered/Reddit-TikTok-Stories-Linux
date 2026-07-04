@@ -4,7 +4,7 @@
 
 image:
   repo: 10.10.10.21:5000/tiktok/app
-  tag: "0.1.2"   # Phase 7 prep: env-driven CONFIG_PATH, litestream baked in, config-seed init
+  tag: "0.1.3"   # #32: Prometheus instrumentation (prometheus-client + instrumentator)
   pullPolicy: IfNotPresent
 
 # Every data-touching pod pins to ONE node (SQLite single-writer + shared RWO
@@ -35,6 +35,13 @@ ingress:
   enabled: true
   className: nginx
   host: tiktok.mk8s.lan
+
+# Prometheus instrumentation (task #32). Metrics served on a SEPARATE port
+# (ClusterIP-only, never via ingress/cloudflared) + a ServiceMonitor labelled
+# release=monitoring so the kube-prometheus-stack scrapes it.
+metrics:
+  enabled: true
+  port: 9100
 
 resources:
   webapp:

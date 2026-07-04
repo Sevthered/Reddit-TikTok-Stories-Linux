@@ -52,6 +52,13 @@ FRONTEND_BUILD_DIR: Path = REPO_ROOT / "webapp" / "frontend" / "build"
 HOST: str = os.environ.get("WEBAPP_HOST", "127.0.0.1")
 PORT: int = int(os.environ.get("WEBAPP_PORT", "8765"))
 
+# Prometheus metrics (task #32). Served on a SEPARATE port (default 9100) via
+# prometheus_client's own HTTP server — NOT on the main app port, so it's never
+# routed by the ingress/cloudflared and stays ClusterIP-only. Off disables all
+# instrumentation.
+METRICS_ENABLED: bool = os.environ.get("WEBAPP_METRICS_ENABLED", "1") == "1"
+METRICS_PORT: int = int(os.environ.get("WEBAPP_METRICS_PORT", "9100"))
+
 # `WEBAPP_DEV=1` enables the dev CORS allowlist for the SvelteKit dev
 # server (vite on :5173) and slightly friendlier error responses.
 DEV_MODE: bool = os.environ.get("WEBAPP_DEV", "0") == "1"

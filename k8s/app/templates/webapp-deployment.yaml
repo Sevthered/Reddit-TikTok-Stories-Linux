@@ -51,8 +51,14 @@ spec:
           # baked CMD = uvicorn webapp.backend.app:app --host 0.0.0.0 --port 8765
           ports:
             - { name: http, containerPort: 8765 }
+            {{- if .Values.metrics.enabled }}
+            - { name: metrics, containerPort: {{ .Values.metrics.port }} }
+            {{- end }}
           env:
             {{- include "tiktok.commonEnv" . | nindent 12 }}
+            {{- if .Values.metrics.enabled }}
+            - { name: WEBAPP_METRICS_PORT, value: {{ .Values.metrics.port | quote }} }
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ .Values.secretName }}

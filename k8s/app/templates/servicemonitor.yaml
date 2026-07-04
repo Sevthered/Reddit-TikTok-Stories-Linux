@@ -1,0 +1,25 @@
+{{- if .Values.metrics.enabled }}
+# ServiceMonitor for the webapp /metrics (task #32). The kube-prometheus-stack
+# Prometheus selects ServiceMonitors by label `release: monitoring` across ALL
+# namespaces (verified: serviceMonitorNamespaceSelector empty). Scrapes the
+# ClusterIP-only `metrics` port — never the public 8765 path.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: tiktok-webapp
+  labels:
+    {{- include "tiktok.labels" . | nindent 4 }}
+    app.kubernetes.io/component: webapp
+    release: monitoring          # <- load-bearing: makes it discoverable
+spec:
+  namespaceSelector:
+    matchNames: [{{ .Release.Namespace }}]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tiktok
+      app.kubernetes.io/component: webapp
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+{{- end }}

@@ -14,3 +14,9 @@ spec:
     - name: http
       port: 8765
       targetPort: http
+    {{- if .Values.metrics.enabled }}
+    # Prometheus metrics — ClusterIP-only; the ingress/cloudflared only touch 8765.
+    - name: metrics
+      port: {{ .Values.metrics.port }}
+      targetPort: metrics
+    {{- end }}

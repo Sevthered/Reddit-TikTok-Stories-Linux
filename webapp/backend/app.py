@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 
 from core.config import _load_dotenv
-from webapp.backend import settings
+from webapp.backend import metrics, settings
 from webapp.backend.cf_access import CfAccessError, verify_access_jwt
 from webapp.backend.jobs import JobManager
 from webapp.backend.rate_limit import limiter
@@ -115,6 +115,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     log.info("webapp boot: dev_mode=%s host=%s port=%d db=%s",
              settings.DEV_MODE, settings.HOST, settings.PORT, settings.DB_PATH)
+    # Prometheus metrics server on the separate :METRICS_PORT (task #32).
+    if settings.METRICS_ENABLED:
+        metrics.start_metrics_server()
     yield
     log.info("webapp shutdown")
 
@@ -132,6 +135,11 @@ app = FastAPI(
 )
 
 app.state.limiter = limiter
+
+# HTTP RED instrumentation (task #32). Module-level so the middleware is added
+# before startup; /metrics is NOT exposed here — it lives on the separate port.
+if settings.METRICS_ENABLED:
+    metrics.instrument(app)
 
 
 @app.exception_handler(RateLimitExceeded)
