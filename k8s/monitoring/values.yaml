@@ -12,9 +12,12 @@ prometheus:
     resources:
       requests:
         cpu: 100m
-        memory: 512Mi
-      limits:
         memory: 1Gi
+      # Raised 1Gi→2Gi (task #32 follow-up): #28/#32 added many scrape targets
+      # (etcd/control-plane/kube-proxy + tiktok app + 103 ceph_* metrics) → the
+      # pod OOMKilled (137) at 1Gi during WAL replay. Nodes have 15Gi.
+      limits:
+        memory: 2Gi
     storageSpec:
       volumeClaimTemplate:
         spec:
