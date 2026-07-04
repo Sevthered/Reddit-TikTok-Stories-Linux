@@ -1,164 +1,881 @@
 {
   "title": "mk8s Cluster Overview",
   "uid": "mk8s-cluster-overview",
-  "tags": ["mk8s", "cluster", "infra"],
+  "tags": [
+    "mk8s",
+    "cluster",
+    "infra"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "refresh": "30s",
-  "time": {"from": "now-6h", "to": "now"},
-  "templating": {"list": [
-    {"name": "datasource", "type": "datasource", "query": "prometheus",
-     "current": {"text": "Prometheus", "value": "prometheus"}, "hide": 0}
-  ]},
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "text": "Prometheus",
+          "value": "prometheus"
+        },
+        "hide": 0
+      }
+    ]
+  },
   "panels": [
-    {"type": "row", "title": "Cluster", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}},
     {
-      "type": "stat", "title": "Nodes Ready",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 1},
-      "fieldConfig": {"defaults": {"thresholds": {"steps": [
-        {"color": "red", "value": null}, {"color": "yellow", "value": 3}, {"color": "green", "value": 4}]}}},
-      "options": {"colorMode": "value", "graphMode": "none"},
-      "targets": [{"expr": "sum(kube_node_status_condition{condition=\"Ready\",status=\"true\"})", "refId": "A"}]
+      "type": "row",
+      "title": "Cluster",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
     },
     {
-      "type": "stat", "title": "Ceph health",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 1},
-      "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {
-        "0": {"text": "HEALTH_OK", "color": "green"},
-        "1": {"text": "HEALTH_WARN", "color": "yellow"},
-        "2": {"text": "HEALTH_ERR", "color": "red"}}}]}},
-      "options": {"colorMode": "background", "graphMode": "none"},
-      "targets": [{"expr": "ceph_health_status", "refId": "A"}]
-    },
-    {
-      "type": "stat", "title": "Ceph used",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 1},
-      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "thresholds": {"steps": [
-        {"color": "green", "value": null}, {"color": "yellow", "value": 70}, {"color": "red", "value": 85}]}}},
-      "options": {"colorMode": "value", "graphMode": "none"},
-      "targets": [{"expr": "100 * ceph_cluster_total_used_bytes / ceph_cluster_total_bytes", "refId": "A"}]
-    },
-    {
-      "type": "stat", "title": "OSDs up",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 1},
-      "options": {"colorMode": "value", "graphMode": "none"},
-      "fieldConfig": {"defaults": {"thresholds": {"steps": [{"color": "red", "value": null}, {"color": "green", "value": 3}]}}},
-      "targets": [{"expr": "sum(ceph_osd_up)", "refId": "A"}]
-    },
-    {
-      "type": "stat", "title": "Pods running",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 1},
-      "options": {"colorMode": "none", "graphMode": "area"},
-      "targets": [{"expr": "count(kube_pod_info)", "refId": "A"}]
-    },
-    {
-      "type": "stat", "title": "Posts today",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 1},
-      "fieldConfig": {"defaults": {"thresholds": {"steps": [
-        {"color": "red", "value": null}, {"color": "yellow", "value": 1}, {"color": "green", "value": 2}]}}},
-      "options": {"colorMode": "value", "graphMode": "none"},
-      "targets": [{"expr": "max(tiktok_posts_today)", "refId": "A"}]
-    },
-
-    {"type": "row", "title": "Nodes", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5}},
-    {
-      "type": "bargauge", "title": "Memory used % by node",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 7, "w": 6, "x": 0, "y": 6},
-      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "thresholds": {"steps": [
-        {"color": "green", "value": null}, {"color": "yellow", "value": 75}, {"color": "red", "value": 90}]}}},
-      "options": {"orientation": "horizontal", "displayMode": "gradient"},
-      "targets": [{"expr": "label_replace(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes), \"node\", \"mk8s-0$1\", \"instance\", \"10.10.10.1(.):9100\")", "refId": "A", "legendFormat": "{{node}}", "instant": true}]
-    },
-    {
-      "type": "bargauge", "title": "Disk / used % by node",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 7, "w": 6, "x": 6, "y": 6},
-      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "thresholds": {"steps": [
-        {"color": "green", "value": null}, {"color": "yellow", "value": 75}, {"color": "red", "value": 90}]}}},
-      "options": {"orientation": "horizontal", "displayMode": "gradient"},
-      "targets": [{"expr": "label_replace(100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"}), \"node\", \"mk8s-0$1\", \"instance\", \"10.10.10.1(.):9100\")", "refId": "A", "legendFormat": "{{node}}", "instant": true}]
-    },
-    {
-      "type": "bargauge", "title": "Pods by node",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 7, "w": 6, "x": 12, "y": 6},
-      "options": {"orientation": "horizontal", "displayMode": "basic"},
-      "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "#4ccbd8"}}},
-      "targets": [{"expr": "count by (node)(kube_pod_info)", "refId": "A", "legendFormat": "{{node}}", "instant": true}]
-    },
-    {
-      "type": "timeseries", "title": "CPU used % by node",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 7, "w": 6, "x": 18, "y": 6},
-      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}},
-      "targets": [{"expr": "label_replace(100 * (1 - avg by (instance)(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))), \"node\", \"mk8s-0$1\", \"instance\", \"10.10.10.1(.):9100\")", "refId": "A", "legendFormat": "{{node}}"}]
-    },
-
-    {"type": "row", "title": "Ceph (rook-ceph)", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 13}},
-    {
-      "type": "gauge", "title": "Cluster used %",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 7, "w": 6, "x": 0, "y": 14},
-      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "thresholds": {"steps": [
-        {"color": "green", "value": null}, {"color": "yellow", "value": 70}, {"color": "red", "value": 85}]}}},
-      "targets": [{"expr": "100 * ceph_cluster_total_used_bytes / ceph_cluster_total_bytes", "refId": "A"}]
-    },
-    {
-      "type": "timeseries", "title": "Cluster capacity (used vs total)",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 7, "w": 12, "x": 6, "y": 14},
-      "fieldConfig": {"defaults": {"unit": "bytes"}},
+      "type": "stat",
+      "title": "Nodes Ready",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "green",
+                "value": 4
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none"
+      },
       "targets": [
-        {"expr": "ceph_cluster_total_used_bytes", "refId": "A", "legendFormat": "used"},
-        {"expr": "ceph_cluster_total_bytes", "refId": "B", "legendFormat": "total"}
+        {
+          "expr": "sum(kube_node_status_condition{condition=\"Ready\",status=\"true\"})",
+          "refId": "A"
+        }
       ]
     },
     {
-      "type": "stat", "title": "PGs active",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 7, "w": 6, "x": 18, "y": 14},
-      "options": {"colorMode": "value", "graphMode": "none"},
-      "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "#4ccbd8"}}},
+      "type": "stat",
+      "title": "Ceph health",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "HEALTH_OK",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "HEALTH_WARN",
+                  "color": "yellow"
+                },
+                "2": {
+                  "text": "HEALTH_ERR",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none"
+      },
       "targets": [
-        {"expr": "sum(ceph_pg_active)", "refId": "A", "legendFormat": "PGs active"}
+        {
+          "expr": "ceph_health_status",
+          "refId": "A"
+        }
       ]
     },
-
-    {"type": "row", "title": "App (ns/tiktok)", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 21}},
     {
-      "type": "bargauge", "title": "Deployment replicas available",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 22},
-      "options": {"orientation": "horizontal", "displayMode": "basic"},
-      "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "#e0a95e"}}},
-      "targets": [{"expr": "kube_deployment_status_replicas_available{namespace=\"tiktok\"}", "refId": "A", "legendFormat": "{{deployment}}", "instant": true}]
+      "type": "stat",
+      "title": "Ceph used",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "expr": "100 * ceph_cluster_total_used_bytes / ceph_cluster_total_bytes",
+          "refId": "A"
+        }
+      ]
     },
     {
-      "type": "stat", "title": "Uploads enabled",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 6, "w": 4, "x": 8, "y": 22},
-      "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {
-        "0": {"text": "OFF", "color": "red"}, "1": {"text": "ON", "color": "green"}}}]}},
-      "options": {"colorMode": "background", "graphMode": "none"},
-      "targets": [{"expr": "max(tiktok_uploads_enabled)", "refId": "A"}]
+      "type": "stat",
+      "title": "OSDs up",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 3
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(ceph_osd_up)",
+          "refId": "A"
+        }
+      ]
     },
     {
-      "type": "timeseries", "title": "Posts by status",
-      "datasource": {"type": "prometheus", "uid": "${datasource}"},
-      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 22},
-      "targets": [{"expr": "tiktok_posts_by_status", "refId": "A", "legendFormat": "{{status}}"}]
+      "type": "stat",
+      "title": "Pods running",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "expr": "count(kube_pod_info)",
+          "refId": "A"
+        }
+      ]
     },
     {
-      "type": "text", "title": "",
-      "gridPos": {"h": 2, "w": 24, "x": 0, "y": 28},
-      "options": {"mode": "markdown", "content": "Deep app metrics → the **TikTok Pipeline** dashboard. CronJob health (render/upload/confirm/retention) → `kube_job_status_failed{namespace=\"tiktok\"}`. Config not in metrics (helm versions, ingress vhosts, VIP holder) lives in the wiki + `k8s/` manifests."}
+      "type": "stat",
+      "title": "Posts today",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 2
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "expr": "max(tiktok_posts_today)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Nodes",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Memory used % by node",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 0,
+        "y": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 75
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      },
+      "targets": [
+        {
+          "expr": "label_replace(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes), \"node\", \"mk8s-0$1\", \"instance\", \"10.10.10.1(.):9100\")",
+          "refId": "A",
+          "legendFormat": "{{node}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Disk / used % by node",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 6,
+        "y": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 75
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      },
+      "targets": [
+        {
+          "expr": "label_replace(100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"}), \"node\", \"mk8s-0$1\", \"instance\", \"10.10.10.1(.):9100\")",
+          "refId": "A",
+          "legendFormat": "{{node}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Pods by node",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 12,
+        "y": 6
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#4ccbd8"
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "count by (node)(kube_pod_info)",
+          "refId": "A",
+          "legendFormat": "{{node}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU used % by node",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 18,
+        "y": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      },
+      "targets": [
+        {
+          "expr": "label_replace(100 * (1 - avg by (instance)(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))), \"node\", \"mk8s-0$1\", \"instance\", \"10.10.10.1(.):9100\")",
+          "refId": "A",
+          "legendFormat": "{{node}}"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Ceph (rook-ceph)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      }
+    },
+    {
+      "type": "gauge",
+      "title": "Cluster used %",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 0,
+        "y": 14
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "100 * ceph_cluster_total_used_bytes / ceph_cluster_total_bytes",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Cluster capacity (used vs total)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 6,
+        "y": 14
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      },
+      "targets": [
+        {
+          "expr": "ceph_cluster_total_used_bytes",
+          "refId": "A",
+          "legendFormat": "used"
+        },
+        {
+          "expr": "ceph_cluster_total_bytes",
+          "refId": "B",
+          "legendFormat": "total"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "PGs active",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 18,
+        "y": 14
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#4ccbd8"
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(ceph_pg_active)",
+          "refId": "A",
+          "legendFormat": "PGs active"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "App (ns/tiktok)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Deployment replicas available",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 22
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#e0a95e"
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "kube_deployment_status_replicas_available{namespace=\"tiktok\"}",
+          "refId": "A",
+          "legendFormat": "{{deployment}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Uploads enabled",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 8,
+        "y": 22
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "OFF",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "ON",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "expr": "max(tiktok_uploads_enabled)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Posts by status",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      },
+      "targets": [
+        {
+          "expr": "tiktok_posts_by_status",
+          "refId": "A",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Deep app metrics \u2192 the **TikTok Pipeline** dashboard. CronJob health (render/upload/confirm/retention) \u2192 `kube_job_status_failed{namespace=\"tiktok\"}`. Config not in metrics (helm versions, ingress vhosts, VIP holder) lives in the wiki + `k8s/` manifests."
+      }
+    },
+    {
+      "type": "row",
+      "title": "Cloudflare tunnel",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Edge connections",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 0,
+        "y": 31
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 4
+              }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(cloudflared_tunnel_ha_connections{job=\"tiktok-cloudflared\"})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "cloudflared version",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 5,
+        "y": 31
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "name"
+      },
+      "targets": [
+        {
+          "expr": "max by (version)(build_info{job=\"tiktok-cloudflared\"})",
+          "refId": "A",
+          "legendFormat": "{{version}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Edge PoPs (connections)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 14,
+        "x": 10,
+        "y": 31
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "count by (edge_location)(cloudflared_tunnel_server_locations{job=\"tiktok-cloudflared\"})",
+          "refId": "A",
+          "format": "table",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Request rate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 35
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(cloudflared_tunnel_total_requests{job=\"tiktok-cloudflared\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "requests/s"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Tunnel errors",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 35
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(cloudflared_tunnel_request_errors{job=\"tiktok-cloudflared\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "errors/s"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Edge RTT",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 35
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        }
+      },
+      "targets": [
+        {
+          "expr": "quic_client_latest_rtt{job=\"tiktok-cloudflared\"}",
+          "refId": "A",
+          "legendFormat": "conn {{conn_index}} \u00b7 {{pod}}"
+        }
+      ]
     }
   ]
 }

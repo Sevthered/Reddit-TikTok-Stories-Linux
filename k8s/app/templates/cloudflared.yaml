@@ -52,10 +52,12 @@ spec:
         - name: cloudflared
           image: {{ .Values.cloudflared.image }}
           args: ["tunnel", "--config", "/etc/cloudflared/config.yaml", "run"]
+          ports:
+            - { name: metrics, containerPort: 2000 }
           livenessProbe:
             httpGet:
               path: /ready
-              port: 2000
+              port: metrics
             initialDelaySeconds: 10
             periodSeconds: 10
           resources:
@@ -72,4 +74,45 @@ spec:
             secretName: {{ .Values.cloudflared.secretName }}
             items:
               - { key: credentials.json, path: credentials.json }
+---
+# Metrics: ClusterIP Service + ScrapeMonitor for cloudflared's :2000 endpoint
+# (tunnel HA connections, request/error rate, edge RTT, PoPs). ClusterIP-only —
+# never routed by the ingress/tunnel. 2 replicas → 2 scrape targets, aggregated.
+apiVersion: v1
+kind: Service
+metadata:
+  name: tiktok-cloudflared-metrics
+  labels:
+    {{- include "tiktok.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cloudflared
+spec:
+  type: ClusterIP
+  clusterIP: None            # headless — scrape each replica
+  selector:
+    app.kubernetes.io/name: tiktok
+    app.kubernetes.io/component: cloudflared
+  ports:
+    - name: metrics
+      port: 2000
+      targetPort: metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: tiktok-cloudflared
+  labels:
+    {{- include "tiktok.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cloudflared
+    release: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [{{ .Release.Namespace }}]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tiktok
+      app.kubernetes.io/component: cloudflared
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
 {{- end }}
