@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -363,6 +364,121 @@ def _confirm_aigc_dialog(page: Page) -> None:
     log.info("no AIGC confirmation dialog visible (skipping)")
 
 
+# Locale-tolerant match for the Content-Check-Lite ("Revisión del contenido
+# simplificada") row + its in-progress / passed states.
+_CONTENT_CHECK_LABEL_RE = re.compile(
+    r"revisi[oó]n del contenido simplificada|content check|automatic content check",
+    re.I)
+_CONTENT_CHECK_INPROGRESS_RE = re.compile(
+    r"comprobaci[oó]n en curso|checking|in progress", re.I)
+_CONTENT_CHECK_DONE_RE = re.compile(
+    r"no se han detectado problemas|no issues (found|detected)|looks good", re.I)
+# The mid-review "publish before the check finishes?" modal. Answering it with
+# "Publicar ahora" makes TikTok reject the publish server-side ("Ha ocurrido un
+# error") — so we must recognise it and NOT click through it.
+_MIDREVIEW_MODAL_RE = re.compile(
+    r"seguir con la publicaci[oó]n|antes de finalizar la revisi[oó]n|"
+    r"seguimos revisando|continue to post|before.*review", re.I)
+
+
+def _disable_content_check(page: Page) -> None:
+    """Turn OFF TikTok's Content-Check-Lite review toggle before Publicar.
+
+    The check is optional/advisory (Creator Academy). Left ON, clicking
+    Publicar mid-review opens a "¿Seguir con la publicación?" modal, and
+    publishing before the ~10-min review finishes is rejected server-side
+    with "Ha ocurrido un error" — the post never goes live
+    (bugs/2026-07-04-tiktok-content-review-publish-break, wkaisertexas/
+    tiktok-uploader#238). Disabling it means Publicar just publishes.
+
+    Clean no-op if the row/toggle isn't present (intermittent A/B rollout).
+    Never raises — the safe path in _confirm_publish_dialog is the backstop."""
+    try:
+        label = page.get_by_text(_CONTENT_CHECK_LABEL_RE).first
+        if not label.is_visible(timeout=2000):
+            log.info("content-check row not visible (skipping disable)")
+            return
+    except Exception:
+        log.info("content-check row not found (skipping disable)")
+        return
+
+    _screenshot_debug(page, "content_check_before")
+    # The switch lives in the nearest ancestor row that contains a checkbox;
+    # the hidden input is the reliable source-of-truth (same as AIGC).
+    try:
+        row = label.locator(
+            "xpath=ancestor::*[.//input[@type='checkbox']][1]").first
+        checkbox = row.locator('input[type="checkbox"]').first
+        checkbox.wait_for(state="attached", timeout=5000)
+    except Exception as e:
+        log.warning("content-check toggle input not found: %s (skipping)", e)
+        return
+
+    try:
+        if not checkbox.evaluate("el => el.checked"):
+            log.info("content-check already OFF")
+            return
+        # JS click on the input bypasses the overlay that intercepts pointer
+        # events (cf. tiktok-uploader#239), same trick as the AIGC toggle.
+        checkbox.evaluate("el => el.click()")
+        page.wait_for_timeout(600)
+        # Some locales pop a confirm ("Desactivar la revisión?") — dismiss-affirm.
+        _confirm_content_check_off(page)
+        if checkbox.evaluate("el => el.checked"):
+            # Fallback: force-click the visible switch + re-confirm.
+            try:
+                row.locator('[role="switch"]').first.click(force=True, timeout=3000)
+                page.wait_for_timeout(600)
+                _confirm_content_check_off(page)
+            except Exception:
+                pass
+        state = "OFF" if not checkbox.evaluate("el => el.checked") else "STILL ON"
+        log.info("content-check toggle: %s", state)
+    except Exception as e:
+        log.warning("could not toggle content-check off: %s (continuing)", e)
+    finally:
+        _screenshot_debug(page, "content_check_after")
+
+
+def _confirm_content_check_off(page: Page) -> None:
+    """Dismiss the optional 'turn off the review?' confirm, if it appears."""
+    labels = ("Desactivar", "Turn off", "Confirmar", "Confirm", "OK", "Aceptar")
+    deadline = time.time() + 3
+    while time.time() < deadline:
+        for label in labels:
+            try:
+                btn = page.get_by_role("button", name=label, exact=True).first
+                if btn.is_visible(timeout=300):
+                    btn.click()
+                    log.info("content-check off-confirm: clicked %r", label)
+                    page.wait_for_timeout(400)
+                    return
+            except Exception:
+                continue
+        page.wait_for_timeout(250)
+
+
+def _wait_content_check_clear(page: Page, timeout_s: float = 480.0) -> bool:
+    """Poll until the content review is no longer in progress (passed, or the
+    'Comprobación en curso' text is gone). Bounded fallback for when the toggle
+    couldn't be disabled. Returns True if it cleared, False on timeout."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        try:
+            body = page.locator("body").inner_text(timeout=2000)
+        except Exception:
+            body = ""
+        if _CONTENT_CHECK_DONE_RE.search(body or ""):
+            log.info("content review passed ('no issues')")
+            return True
+        if not _CONTENT_CHECK_INPROGRESS_RE.search(body or ""):
+            log.info("content review no longer in progress")
+            return True
+        page.wait_for_timeout(5000)
+    log.warning("content review did not clear within %.0fs", timeout_s)
+    return False
+
+
 def _click_post(page: Page) -> None:
     btn = page.locator(_SEL_POST_BTN).first
     btn.wait_for(state="visible", timeout=15000)
@@ -393,29 +509,33 @@ def _click_post(page: Page) -> None:
 
 
 def _confirm_publish_dialog(page: Page) -> None:
-    """After Publicar, TikTok's 2026 Content-Check-Lite flow can open a
-    SEQUENCE of confirmation modals — e.g. 'Publicar ahora', then a
-    'Continue to post?' / 'Continuar publicando' step — before the post
-    actually goes live. The old code clicked only the FIRST dialog and
-    returned, so the second gate was never confirmed and the post stayed
-    on the form (bugs/2026-07-04-tiktok-content-review-publish-break).
+    """After Publicar, dismiss any benign publish-confirm dialog.
 
-    Click through each affirmative CTA until no more dialogs appear. Each
-    is intermittent, so absence is a clean no-op. Any open dialog with no
-    known affirmative is screenshotted + surfaced (not silently skipped)
-    so we can extend the label set from real evidence."""
+    IMPORTANT: the mid-review "¿Seguir con la publicación? … antes de finalizar
+    la revisión" modal must NEVER be answered with "Publicar ahora" — that asks
+    TikTok to publish before the Content-Check-Lite review finishes, which it
+    rejects server-side with "Ha ocurrido un error" and the post never goes
+    live (bugs/2026-07-04-tiktok-content-review-publish-break, wkaisertexas/
+    tiktok-uploader#238). We normally prevent this by disabling the review in
+    `_disable_content_check` before Publicar; this is the backstop if the
+    toggle couldn't be turned off.
+
+    - If the mid-review modal appears: click Cancelar (do NOT publish), wait
+      bounded for the review to clear, then re-click Publicar once.
+    - Otherwise click through genuine confirm CTAs (NOT "Publicar ahora")."""
+    # "Publicar ahora" is deliberately excluded — it is only ever the
+    # mid-review publish-anyway button, handled separately below.
     labels = (
-        "Publicar ahora",                              # ES — publish-now confirm
         "Continuar publicando", "Seguir publicando",   # ES — 'Continue to post?' step
-        "Publicar de todos modos",                     # ES — 'Post anyway'
-        "Post now", "Publish now", "Continue to post", "Post anyway",
-        "Publicar",                                    # ES — sometimes reused
+        "Publicar de todos modos", "Post anyway",      # ES/EN — 'Post anyway'
+        "Publicar",                                    # ES — plain publish confirm
         "Confirmar", "Continuar",                      # ES
         "Post", "Publish", "Confirm", "Continue", "OK",
     )
     deadline = time.time() + 25          # room for a couple of chained dialogs
     clicks = 0
     idle_polls = 0
+    handled_midreview = False
     while time.time() < deadline and clicks < 4:
         dialog = page.locator('[role="dialog"], [role="alertdialog"]').first
         try:
@@ -431,6 +551,36 @@ def _confirm_publish_dialog(page: Page) -> None:
             page.wait_for_timeout(500)
             continue
         idle_polls = 0
+
+        # Mid-review modal? Never "Publicar ahora" — cancel, wait, re-publish.
+        txt = _dump_visible_dialog(page) or ""
+        if _MIDREVIEW_MODAL_RE.search(txt) and not handled_midreview:
+            handled_midreview = True
+            log.warning("mid-review publish modal appeared (content-check not "
+                        "disabled) — cancelling instead of publishing early")
+            _screenshot_debug(page, "content_check_modal_cancel")
+            for cancel in ("Cancelar", "Cancel"):
+                try:
+                    b = dialog.get_by_role("button", name=cancel, exact=True).first
+                    if b.is_visible(timeout=300):
+                        b.click()
+                        break
+                except Exception:
+                    continue
+            page.wait_for_timeout(500)
+            _wait_content_check_clear(page)
+            # Re-publish now that the review is (hopefully) done.
+            try:
+                post_btn = page.locator(_SEL_POST_BTN).first
+                post_btn.wait_for(state="visible", timeout=10000)
+                post_btn.click()
+                log.info("re-clicked Publicar after content review cleared")
+                page.wait_for_timeout(1500)
+            except Exception as e:
+                _screenshot_debug(page, "republish_failed")
+                raise TikTokDOMError(
+                    f"could not re-Publicar after content review: {e}") from e
+            continue
 
         clicked_this = False
         for label in labels:
@@ -449,13 +599,12 @@ def _confirm_publish_dialog(page: Page) -> None:
 
         if not clicked_this:
             # Dialog open but no known CTA — capture it so we can extend labels.
-            txt = _dump_visible_dialog(page)
             log.warning("unhandled publish dialog (no known CTA): %r",
-                        (txt or "").replace("\n", " | ")[:200])
+                        txt.replace("\n", " | ")[:200])
             _screenshot_debug(page, "publish_dialog_unhandled")
             break
 
-    if clicks == 0:
+    if clicks == 0 and not handled_midreview:
         log.info("no publish confirmation dialog visible (skipping)")
 
 
@@ -673,6 +822,11 @@ def upload_to_tiktok(
             # ---- AIGC toggle ----
             if aigc:
                 _ensure_aigc_toggle_on(page)
+
+            # ---- Skip Content Check Lite (advisory review) so Publicar
+            #      doesn't hit the mid-review "publish anyway → error" path
+            #      (bug #29 / tiktok-uploader#238) ----
+            _disable_content_check(page)
 
             # ---- Post ----
             _click_post(page)
