@@ -1,0 +1,52 @@
+# TikTok app — Helm values. Phase 6 defaults deploy a SAFE non-posting posture:
+# webapp runs (smoke-test), bot scaled to 0, all CronJobs suspended. Phase 7
+# cutover flips bot.replicas=1 + cronjobs.suspend=false after data migration.
+
+image:
+  repo: 10.10.10.21:5000/tiktok/app
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+# Every data-touching pod pins to ONE node (SQLite single-writer + shared RWO
+# PVC). Phase 6 label lives on mk8s-01; Phase 7 moves it to mk8s-04.
+pinNodeSelector:
+  tiktok.app/pinned: "true"
+
+# pwuser uid in the Playwright base image; makes the RBD mount group-writable.
+fsGroup: 1000
+
+storage:
+  className: ceph-block   # RBD / RWO (default SC); RWO enforces single-node attach
+  size: 20Gi
+
+timezone: Europe/Madrid
+
+# Secret with WEBAPP_CSRF_SECRET, WEBAPP_INTERNAL_TOKEN, WEBAPP_ALLOWED_HOSTS
+# (operator-created out-of-band; NOT templated so no secrets live in git).
+secretName: tiktok-secrets
+
+bot:
+  replicas: 0            # 0 in Phase 6 — avoids a 2nd Telegram bot on the live token
+
+cronjobs:
+  suspend: true          # true in Phase 6 — nothing fires, nothing posts
+
+ingress:
+  enabled: true
+  className: nginx
+  host: tiktok.mk8s.lan
+
+resources:
+  webapp:
+    requests: { memory: 512Mi, cpu: 250m }
+    limits: { memory: 1Gi, cpu: "1" }
+  # render is whisper/ffmpeg-heavy; upload runs a headed Chromium.
+  render:
+    requests: { memory: 2Gi, cpu: "1" }
+    limits: { memory: 6Gi, cpu: "4" }
+  upload:
+    requests: { memory: 1Gi, cpu: 500m }
+    limits: { memory: 3Gi, cpu: "2" }
+  light:
+    requests: { memory: 256Mi, cpu: 100m }
+    limits: { memory: 512Mi, cpu: 500m }

@@ -1,0 +1,9 @@
+apiVersion: v2
+name: tiktok
+description: >-
+  Reddit -> TikTok pipeline. ONE container image run as many workloads
+  (webapp + bot Deployments, render/upload/confirm/retention CronJobs) sharing
+  one RWO PVC, pinned to a single node (SQLite single-writer). Phase 6.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

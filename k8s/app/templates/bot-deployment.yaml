@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tiktok-bot
+  labels:
+    {{- include "tiktok.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bot
+spec:
+  # 0 in Phase 6: a running bot would be a 2nd consumer of the live Telegram
+  # token (getUpdates conflict). Phase 7 sets bot.replicas=1 after cutover.
+  replicas: {{ .Values.bot.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tiktok
+      app.kubernetes.io/component: bot
+  template:
+    metadata:
+      labels:
+        {{- include "tiktok.labels" . | nindent 8 }}
+        app.kubernetes.io/component: bot
+    spec:
+      nodeSelector:
+        {{- toYaml .Values.pinNodeSelector | nindent 8 }}
+      securityContext:
+        fsGroup: {{ .Values.fsGroup }}
+      containers:
+        - name: bot
+          image: {{ include "tiktok.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "scripts/run_bot.py"]
+          env:
+            {{- include "tiktok.commonEnv" . | nindent 12 }}
+            # Reach the webapp over the cluster Service; the X-Internal-Token
+            # (from the Secret) + forced Host header authenticate the bot.
+            - name: WEBAPP_BASE
+              value: "http://tiktok-webapp:8765"
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secretName }}
+          resources:
+            {{- toYaml .Values.resources.light | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /app/data }
+            - { name: logs, mountPath: /app/logs }
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: tiktok-data
+        - name: logs
+          emptyDir: {}

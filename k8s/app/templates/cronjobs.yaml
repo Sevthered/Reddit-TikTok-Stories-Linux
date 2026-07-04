@@ -1,0 +1,95 @@
+{{- /*
+Six CronJobs from the systemd timers. All share suspend/timeZone and pin to the
+app node. Two "headed" kinds (render, upload) launch Chromium under Xvfb via
+`xvfb-run -a`, need a writable HOME (crashpad) and a 1Gi /dev/shm. Two "light"
+kinds (confirm, retention) are plain Python. Nothing catches up on a missed
+fire (startingDeadlineSeconds bounded, no backfill), matching Persistent=false.
+*/ -}}
+{{- $img := include "tiktok.image" . -}}
+{{- $root := . -}}
+
+{{- range $job := list
+  (dict "name" "render-0000" "kind" "headed" "schedule" "30 23 * * *" "res" "render" "cmd" (list "xvfb-run" "-a" "python" "scripts/slot.py" "render" "--instance" "0000"))
+  (dict "name" "render-1200" "kind" "headed" "schedule" "30 11 * * *" "res" "render" "cmd" (list "xvfb-run" "-a" "python" "scripts/slot.py" "render" "--instance" "1200"))
+  (dict "name" "upload-0000" "kind" "headed" "schedule" "0 0 * * *"   "res" "upload" "cmd" (list "xvfb-run" "-a" "python" "scripts/slot.py" "upload" "--instance" "0000"))
+  (dict "name" "upload-1200" "kind" "headed" "schedule" "0 12 * * *"  "res" "upload" "cmd" (list "xvfb-run" "-a" "python" "scripts/slot.py" "upload" "--instance" "1200"))
+  (dict "name" "confirm"     "kind" "light"  "schedule" "*/30 * * * *" "res" "light" "cmd" (list "python" "-m" "pipeline.confirm_live"))
+  (dict "name" "retention"   "kind" "light"  "schedule" "0 * * * *"    "res" "light" "cmd" (list "python" "-m" "pipeline.retention"))
+}}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tiktok-{{ $job.name }}
+  labels:
+    {{- include "tiktok.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $job.name }}
+spec:
+  schedule: {{ $job.schedule | quote }}
+  timeZone: {{ $root.Values.timezone | quote }}
+  suspend: {{ $root.Values.cronjobs.suspend }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "tiktok.labels" $root | nindent 12 }}
+            app.kubernetes.io/component: {{ $job.name }}
+        spec:
+          restartPolicy: Never
+          nodeSelector:
+            {{- toYaml $root.Values.pinNodeSelector | nindent 12 }}
+          securityContext:
+            fsGroup: {{ $root.Values.fsGroup }}
+          containers:
+            - name: {{ $job.name }}
+              image: {{ $img }}
+              imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+              command: {{ $job.cmd | toJson }}
+              env:
+                {{- include "tiktok.commonEnv" $root | nindent 16 }}
+                {{- if eq $job.kind "headed" }}
+                # Headed Chromium: crashpad resolves --database under $HOME, so
+                # give it a writable non-/home path (same fix as the systemd
+                # upload units). Xvfb is started per-job by `xvfb-run -a`.
+                - name: HOME
+                  value: /app/.chromium-home
+                {{- end }}
+                {{- if eq $job.name "render-0000" }}
+                - { name: OMP_NUM_THREADS, value: "4" }
+                {{- end }}
+                {{- if eq $job.name "render-1200" }}
+                - { name: OMP_NUM_THREADS, value: "4" }
+                {{- end }}
+              envFrom:
+                - secretRef:
+                    name: {{ $root.Values.secretName }}
+              resources:
+                {{- toYaml (index $root.Values.resources $job.res) | nindent 16 }}
+              volumeMounts:
+                - { name: data, mountPath: /app/data }
+                - { name: logs, mountPath: /app/logs }
+                {{- if eq $job.kind "headed" }}
+                - { name: chromium-home, mountPath: /app/.chromium-home }
+                - { name: dshm, mountPath: /dev/shm }
+                {{- end }}
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: tiktok-data
+            - name: logs
+              emptyDir: {}
+            {{- if eq $job.kind "headed" }}
+            - name: chromium-home
+              emptyDir: {}
+            - name: dshm
+              emptyDir:
+                medium: Memory
+                sizeLimit: 1Gi
+            {{- end }}
+{{- end }}

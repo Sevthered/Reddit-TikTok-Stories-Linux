@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tiktok-webapp
+  labels:
+    {{- include "tiktok.labels" . | nindent 4 }}
+    app.kubernetes.io/component: webapp
+spec:
+  replicas: 1
+  # SQLite single-writer: never run two webapp pods against the same DB.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tiktok
+      app.kubernetes.io/component: webapp
+  template:
+    metadata:
+      labels:
+        {{- include "tiktok.labels" . | nindent 8 }}
+        app.kubernetes.io/component: webapp
+    spec:
+      nodeSelector:
+        {{- toYaml .Values.pinNodeSelector | nindent 8 }}
+      securityContext:
+        fsGroup: {{ .Values.fsGroup }}   # make the RBD mount writable by pwuser
+      initContainers:
+        # Create data/ + the SQLite schema on the fresh PVC before the webapp
+        # starts. core.db.Db.open() runs CREATE TABLE IF NOT EXISTS (no alembic).
+        - name: db-init
+          image: {{ include "tiktok.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-c", "from core.db import Db; Db.open()"]
+          volumeMounts:
+            - { name: data, mountPath: /app/data }
+      containers:
+        - name: webapp
+          image: {{ include "tiktok.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # baked CMD = uvicorn webapp.backend.app:app --host 0.0.0.0 --port 8765
+          ports:
+            - { name: http, containerPort: 8765 }
+          env:
+            {{- include "tiktok.commonEnv" . | nindent 12 }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secretName }}
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+              # /api/health is Cf-Access-exempt; send an allowlisted Host so the
+              # DNS-rebinding host-allowlist doesn't 400 the kubelet probe.
+              httpHeaders:
+                - { name: Host, value: "tiktok-webapp:8765" }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+              httpHeaders:
+                - { name: Host, value: "tiktok-webapp:8765" }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.resources.webapp | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /app/data }
+            - { name: logs, mountPath: /app/logs }
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: tiktok-data
+        - name: logs
+          emptyDir: {}

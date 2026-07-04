@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tiktok-data
+  labels:
+    {{- include "tiktok.labels" . | nindent 4 }}
+spec:
+  # RWO: SQLite is single-writer and cannot live on a network filesystem shared
+  # across nodes. RWO on ceph-block (RBD) enforces single-node attach; all app
+  # pods share it because they're pinned to the same node.
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ .Values.storage.className }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.size }}
