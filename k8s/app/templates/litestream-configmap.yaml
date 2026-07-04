@@ -1,0 +1,29 @@
+{{- if .Values.litestream.enabled }}
+# Litestream config for the webapp-pod sidecar. Mirrors the host
+# /etc/litestream.yml (single DB → R2, s3 driver). Credentials + the
+# account-scoped endpoint are NOT here — litestream expands ${LITESTREAM_*} from
+# the sidecar's env (sourced from the tiktok-litestream secret) at startup, so
+# no secrets land in git or the ConfigMap.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tiktok-litestream-config
+  labels:
+    {{- include "tiktok.labels" . | nindent 4 }}
+    app.kubernetes.io/component: litestream
+data:
+  litestream.yml: |
+    dbs:
+      - path: /app/data/used_stories.db
+        replicas:
+          - type: s3
+            endpoint: ${LITESTREAM_R2_ENDPOINT}
+            bucket: {{ .Values.litestream.bucket | quote }}
+            path: {{ .Values.litestream.path | quote }}
+            region: auto
+            access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+            secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+            sync-interval: {{ .Values.litestream.syncInterval }}
+            retention: {{ .Values.litestream.retention }}
+            snapshot-interval: {{ .Values.litestream.snapshotInterval }}
+{{- end }}

@@ -19,7 +19,13 @@ _log = logging.getLogger("webapp")
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
 DB_PATH: Path = REPO_ROOT / "data" / "used_stories.db"
-CONFIG_PATH: Path = REPO_ROOT / "config.toml"
+# CONFIG_PATH is env-overridable so the k8s deploy points it at the writable PVC
+# (/app/data/config.toml) — the config-editor's atomic write then persists across
+# pod restarts. Unset → repo-relative config.toml (unchanged for systemd/local).
+CONFIG_PATH: Path = (
+    Path(os.environ["CONFIG_PATH"]) if os.environ.get("CONFIG_PATH")
+    else REPO_ROOT / "config.toml"
+)
 
 # Secrets file (P0.4, research run 7): prod points this at
 # /etc/tiktok/environment (same file systemd's EnvironmentFile= loads

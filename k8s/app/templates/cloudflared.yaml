@@ -1,0 +1,75 @@
+{{- if .Values.cloudflared.enabled }}
+# cloudflared — public edge for the webapp via the existing named tunnel
+# (tiktok-webapp), moved off the mk8s-04 host into the cluster. Routes to the
+# nginx ingress LB (10.10.10.20) with the LAN vhost Host header, so the public
+# path mirrors the LAN path: edge → cloudflared → ingress-nginx → webapp Service.
+# Credentials.json (named-tunnel creds) comes from the tiktok-cloudflared secret;
+# the tunnel config is this ConfigMap. Not node-pinned — only needs to reach the
+# ingress LB, reachable cluster-wide.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tiktok-cloudflared-config
+  labels:
+    {{- include "tiktok.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cloudflared
+data:
+  config.yaml: |
+    # If cloudflared cannot resolve the tunnel by NAME here (no origin cert in
+    # the pod), set cloudflared.tunnelName to the tunnel UUID instead — the
+    # credentials.json carries the same ID.
+    tunnel: {{ .Values.cloudflared.tunnelName }}
+    credentials-file: /etc/cloudflared-creds/credentials.json
+    no-autoupdate: true
+    metrics: 0.0.0.0:2000
+    ingress:
+      - hostname: {{ .Values.cloudflared.hostname }}
+        service: {{ .Values.cloudflared.originService }}
+        originRequest:
+          httpHostHeader: {{ .Values.cloudflared.originHostHeader }}
+      - service: http_status:404
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tiktok-cloudflared
+  labels:
+    {{- include "tiktok.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cloudflared
+spec:
+  replicas: {{ .Values.cloudflared.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tiktok
+      app.kubernetes.io/component: cloudflared
+  template:
+    metadata:
+      labels:
+        {{- include "tiktok.labels" . | nindent 8 }}
+        app.kubernetes.io/component: cloudflared
+    spec:
+      containers:
+        - name: cloudflared
+          image: {{ .Values.cloudflared.image }}
+          args: ["tunnel", "--config", "/etc/cloudflared/config.yaml", "run"]
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: 2000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.cloudflared.resources | nindent 12 }}
+          volumeMounts:
+            - { name: config, mountPath: /etc/cloudflared, readOnly: true }
+            - { name: creds, mountPath: /etc/cloudflared-creds, readOnly: true }
+      volumes:
+        - name: config
+          configMap:
+            name: tiktok-cloudflared-config
+        - name: creds
+          secret:
+            secretName: {{ .Values.cloudflared.secretName }}
+            items:
+              - { key: credentials.json, path: credentials.json }
+{{- end }}

@@ -15,11 +15,23 @@
 # (Chromium is launched WITHOUT --no-sandbox, so we MUST run non-root).
 FROM mcr.microsoft.com/playwright/python:v1.61.0-noble
 
-# System ffmpeg (core/ffmpeg.py resolves it via shutil.which).
+# System ffmpeg (core/ffmpeg.py resolves it via shutil.which). curl + ca-certs
+# are needed to fetch the litestream binary below.
 USER root
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg \
+ && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
+
+# Litestream (pinned to the host version 0.5.13) — streams the SQLite DB to R2.
+# Runs as a sidecar in the webapp pod under k8s; baked into THIS image so the
+# sidecar pulls from the in-cluster registry (no docker.io dependency), matching
+# the Phase 6 one-image design. Asset is x86_64 (amd64 build node).
+ARG LITESTREAM_VERSION=0.5.13
+RUN curl -fsSL "https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/litestream-${LITESTREAM_VERSION}-linux-x86_64.tar.gz" \
+      -o /tmp/litestream.tar.gz \
+ && tar -xzf /tmp/litestream.tar.gz -C /usr/local/bin litestream \
+ && rm /tmp/litestream.tar.gz \
+ && litestream version
 
 WORKDIR /app
 

@@ -159,7 +159,13 @@ def _load_dotenv(path: str | Path | None = None) -> None:
                 os.environ[k] = v
 
 
-def load_config(path: str | Path = "config.toml") -> Config:
+def load_config(path: str | Path | None = None) -> Config:
+    # Default config location is env-overridable (CONFIG_PATH) so the k8s deploy
+    # can point pipeline entry points at the writable PVC (/app/data/config.toml)
+    # instead of the image-baked /app/config.toml. Unset → repo-relative
+    # "config.toml" (unchanged behaviour for systemd/local runs).
+    if path is None:
+        path = os.environ.get("CONFIG_PATH") or "config.toml"
     p = Path(path)
     if not p.exists():
         raise ConfigError(f"config file not found: {p}")

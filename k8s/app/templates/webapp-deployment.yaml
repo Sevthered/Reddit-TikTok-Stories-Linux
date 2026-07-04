@@ -25,12 +25,23 @@ spec:
       securityContext:
         fsGroup: {{ .Values.fsGroup }}   # make the RBD mount writable by pwuser
       initContainers:
-        # Create data/ + the SQLite schema on the fresh PVC before the webapp
-        # starts. core.db.Db.open() runs CREATE TABLE IF NOT EXISTS (no alembic).
+        # Seed the PVC before the webapp starts: (1) copy the image-baked
+        # config.toml onto the PVC if absent, so CONFIG_PATH=/app/data/config.toml
+        # resolves on a fresh volume (the real prod config is migrated over it at
+        # cutover; never overwrite an existing/edited file); (2) create the SQLite
+        # schema — core.db.Db.open() runs CREATE TABLE IF NOT EXISTS (no alembic).
         - name: db-init
           image: {{ include "tiktok.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["python", "-c", "from core.db import Db; Db.open()"]
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              [ -f /app/data/config.toml ] || cp /app/config.toml /app/data/config.toml
+              python -c "from core.db import Db; Db.open()"
+          env:
+            {{- include "tiktok.commonEnv" . | nindent 12 }}
           volumeMounts:
             - { name: data, mountPath: /app/data }
       containers:
@@ -68,9 +79,38 @@ spec:
           volumeMounts:
             - { name: data, mountPath: /app/data }
             - { name: logs, mountPath: /app/logs }
+        {{- if .Values.litestream.enabled }}
+        # Litestream sidecar — replicates the SQLite DB to R2. Same image (binary
+        # baked in). Config is a ConfigMap; R2 endpoint + keys come from the
+        # secret and are ${}-interpolated by litestream at startup.
+        - name: litestream
+          image: {{ include "tiktok.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["replicate", "-config", "/etc/litestream/litestream.yml"]
+          env:
+            - name: LITESTREAM_R2_ENDPOINT
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.litestream.secretName }}, key: LITESTREAM_R2_ENDPOINT }
+            - name: LITESTREAM_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.litestream.secretName }}, key: LITESTREAM_ACCESS_KEY_ID }
+            - name: LITESTREAM_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.litestream.secretName }}, key: LITESTREAM_SECRET_ACCESS_KEY }
+          resources:
+            {{- toYaml .Values.litestream.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /app/data }
+            - { name: litestream-config, mountPath: /etc/litestream, readOnly: true }
+        {{- end }}
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: tiktok-data
         - name: logs
           emptyDir: {}
+        {{- if .Values.litestream.enabled }}
+        - name: litestream-config
+          configMap:
+            name: tiktok-litestream-config
+        {{- end }}

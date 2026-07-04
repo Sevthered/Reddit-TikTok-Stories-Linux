@@ -50,3 +50,37 @@ resources:
   light:
     requests: { memory: 256Mi, cpu: 100m }
     limits: { memory: 512Mi, cpu: 500m }
+
+# Litestream sidecar in the webapp pod — streams data/used_stories.db to R2 (the
+# host systemd deploy ran the same tool). OFF in Phase 6 (no creds yet); enabled
+# at Phase 7 cutover once the `tiktok-litestream` secret exists. Sidecar reuses
+# the app image (litestream baked into it). Static R2 params live here; the
+# account-scoped endpoint + access keys come from the secret (kept out of git).
+litestream:
+  enabled: false
+  secretName: tiktok-litestream   # LITESTREAM_R2_ENDPOINT / _ACCESS_KEY_ID / _SECRET_ACCESS_KEY
+  bucket: webapp-bucket
+  path: sqlite/used_stories.db
+  syncInterval: 1s
+  retention: 168h
+  snapshotInterval: 24h
+  resources:
+    requests: { memory: 64Mi, cpu: 25m }
+    limits: { memory: 256Mi, cpu: 250m }
+
+# cloudflared tunnel exposing the webapp publicly. OFF until Phase 7. Points at
+# the nginx ingress LB (mirrors the LAN path edge→cf→ingress→webapp); the Host
+# header selects the ingress vhost. Named-tunnel credentials.json comes from the
+# `tiktok-cloudflared` secret. Tag = latest release verified 2026-07-04.
+cloudflared:
+  enabled: false
+  image: cloudflare/cloudflared:2026.6.1
+  replicas: 2
+  secretName: tiktok-cloudflared   # key: credentials.json
+  tunnelName: tiktok-webapp
+  originService: http://10.10.10.20
+  originHostHeader: tiktok.mk8s.lan
+  hostname: webapp.sebgoncre.online
+  resources:
+    requests: { memory: 64Mi, cpu: 25m }
+    limits: { memory: 128Mi, cpu: 200m }
