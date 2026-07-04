@@ -742,7 +742,7 @@
       },
       "targets": [
         {
-          "expr": "sum(cloudflared_tunnel_ha_connections{job=\"tiktok-cloudflared\"})",
+          "expr": "sum(cloudflared_tunnel_ha_connections{job=\"tiktok-cloudflared-metrics\"})",
           "refId": "A"
         }
       ]
@@ -767,7 +767,7 @@
       },
       "targets": [
         {
-          "expr": "max by (version)(build_info{job=\"tiktok-cloudflared\"})",
+          "expr": "max by (version)(build_info{job=\"tiktok-cloudflared-metrics\"})",
           "refId": "A",
           "legendFormat": "{{version}}",
           "instant": true
@@ -792,7 +792,7 @@
       },
       "targets": [
         {
-          "expr": "count by (edge_location)(cloudflared_tunnel_server_locations{job=\"tiktok-cloudflared\"})",
+          "expr": "count by (edge_location)(cloudflared_tunnel_server_locations{job=\"tiktok-cloudflared-metrics\"})",
           "refId": "A",
           "format": "table",
           "instant": true
@@ -819,7 +819,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(cloudflared_tunnel_total_requests{job=\"tiktok-cloudflared\"}[5m]))",
+          "expr": "sum(rate(cloudflared_tunnel_total_requests{job=\"tiktok-cloudflared-metrics\"}[5m]))",
           "refId": "A",
           "legendFormat": "requests/s"
         }
@@ -845,7 +845,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(cloudflared_tunnel_request_errors{job=\"tiktok-cloudflared\"}[5m]))",
+          "expr": "sum(rate(cloudflared_tunnel_request_errors{job=\"tiktok-cloudflared-metrics\"}[5m]))",
           "refId": "A",
           "legendFormat": "errors/s"
         }
@@ -871,7 +871,7 @@
       },
       "targets": [
         {
-          "expr": "quic_client_latest_rtt{job=\"tiktok-cloudflared\"}",
+          "expr": "quic_client_latest_rtt{job=\"tiktok-cloudflared-metrics\"}",
           "refId": "A",
           "legendFormat": "conn {{conn_index}} \u00b7 {{pod}}"
         }
