@@ -1,0 +1,27 @@
+# Reference copy of /etc/rancher/k3s/config.yaml deployed on the 3 SERVER nodes
+# (mk8s-01/02/03) in task #28 Phase B. Host config — NOT applied by kubectl;
+# lives at /etc/rancher/k3s/config.yaml on each server, merges with the inline
+# ExecStart flags. Requires a k3s restart (rolling, one server at a time).
+#
+# - etcd-expose-metrics + *-arg bind-address=0.0.0.0: expose etcd (2381/http),
+#   controller-manager (10257/https), scheduler (10259/https), kube-proxy
+#   (10249/http) metrics on the node IP so kube-prometheus-stack can scrape them
+#   (see k8s/monitoring/values.yaml kubeEtcd/kubeControllerManager/... endpoints).
+# - tls-san: ALL API SANs (existing node IPs/names + the 10.10.10.10 VIP prepped
+#   for the Phase-D kube-vip control-plane VIP). Full list so the serving cert
+#   can never drop a SAN regardless of config/CLI merge semantics.
+etcd-expose-metrics: true
+kube-controller-manager-arg:
+  - "bind-address=0.0.0.0"
+kube-scheduler-arg:
+  - "bind-address=0.0.0.0"
+kube-proxy-arg:
+  - "metrics-bind-address=0.0.0.0"
+tls-san:
+  - 10.10.10.10
+  - 10.10.10.11
+  - 10.10.10.12
+  - 10.10.10.13
+  - mk8s-01
+  - mk8s-02
+  - mk8s-03
