@@ -86,7 +86,7 @@ spec:
         - name: litestream
           image: {{ include "tiktok.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args: ["replicate", "-config", "/etc/litestream/litestream.yml"]
+          command: ["litestream", "replicate", "-config", "/etc/litestream/litestream.yml"]
           env:
             - name: LITESTREAM_R2_ENDPOINT
               valueFrom:
