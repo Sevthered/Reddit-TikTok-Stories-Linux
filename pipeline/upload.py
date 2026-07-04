@@ -402,7 +402,6 @@ def _disable_content_check(page: Page) -> None:
         log.info("content-check row not found (skipping disable)")
         return
 
-    _screenshot_debug(page, "content_check_before")
     # The switch lives in the nearest ancestor row that contains a checkbox;
     # the hidden input is the reliable source-of-truth (same as AIGC).
     try:
@@ -436,8 +435,6 @@ def _disable_content_check(page: Page) -> None:
         log.info("content-check toggle: %s", state)
     except Exception as e:
         log.warning("could not toggle content-check off: %s (continuing)", e)
-    finally:
-        _screenshot_debug(page, "content_check_after")
 
 
 def _confirm_content_check_off(page: Page) -> None:
@@ -487,34 +484,45 @@ _PROCESSING_RE = re.compile(
 def _settle_before_publish(page: Page,
                            min_wait_s: float | None = None,
                            max_wait_s: float | None = None) -> None:
-    """Wait for TikTok to finish server-side processing of the uploaded video
-    before Publicar. Polls until no "Procesando"/"processing" indicator is
-    visible AND at least `min_wait_s` has elapsed, capped at `max_wait_s`.
+    """Wait for TikTok to finish server-side ingest/processing of the uploaded
+    video BEFORE clicking Publicar.
+
+    This is the load-bearing fix for the "Ha ocurrido un error. Retry or
+    replace video" failure: Publicar becoming enabled only means the *upload*
+    reached TikTok — the file is still transcoding server-side (the cover shows
+    "Procesando"). Publishing mid-processing is rejected, even in a manual
+    browser session. So we poll the page for any processing indicator
+    ("Procesando"/"processing"/"subiendo"…) and only publish once it has been
+    clear for two consecutive polls AND a floor buffer has elapsed — capped so
+    a stuck check can't hang the run.
 
     Tunable via env: TIKTOK_PUBLISH_SETTLE_MIN_S (default 60),
-    TIKTOK_PUBLISH_SETTLE_MAX_S (default 180)."""
+    TIKTOK_PUBLISH_SETTLE_MAX_S (default 240)."""
     if min_wait_s is None:
         min_wait_s = float(os.environ.get("TIKTOK_PUBLISH_SETTLE_MIN_S", "60"))
     if max_wait_s is None:
-        max_wait_s = float(os.environ.get("TIKTOK_PUBLISH_SETTLE_MAX_S", "180"))
+        max_wait_s = float(os.environ.get("TIKTOK_PUBLISH_SETTLE_MAX_S", "240"))
     start = time.time()
     log.info("settling before publish (min %.0fs, max %.0fs)…", min_wait_s, max_wait_s)
+    consecutive_clear = 0
     while True:
         elapsed = time.time() - start
         try:
             body = page.locator("body").inner_text(timeout=2000)
         except Exception:
             body = ""
-        still_processing = bool(_PROCESSING_RE.search(body or ""))
+        if _PROCESSING_RE.search(body or ""):
+            consecutive_clear = 0
+        else:
+            consecutive_clear += 1
         if elapsed >= max_wait_s:
-            log.info("settle: reached max %.0fs (processing=%s) — publishing",
-                     max_wait_s, still_processing)
-            break
-        if elapsed >= min_wait_s and not still_processing:
+            log.warning("settle: reached max %.0fs still seeing processing — "
+                        "publishing anyway (may error)", max_wait_s)
+            return
+        if elapsed >= min_wait_s and consecutive_clear >= 2:
             log.info("settle: processing cleared after %.0fs — publishing", elapsed)
-            break
+            return
         page.wait_for_timeout(3000)
-    _screenshot_debug(page, "settled_before_publish")
 
 
 def _click_post(page: Page) -> None:
@@ -548,9 +556,6 @@ def _click_post(page: Page) -> None:
     # Give the click a moment to register; some modals appear ~1s later.
     page.wait_for_timeout(1500)
     _confirm_publish_dialog(page)
-    # Capture the form state right after the publish-dialog chain — helps
-    # diagnose the Content-Check-Lite flow if confirmation later times out.
-    _screenshot_debug(page, "after_publish_dialogs")
 
 
 def _confirm_publish_dialog(page: Page) -> None:
@@ -632,7 +637,6 @@ def _confirm_publish_dialog(page: Page) -> None:
             try:
                 btn = dialog.get_by_role("button", name=label, exact=True).first
                 if btn.is_visible(timeout=300):
-                    _screenshot_debug(page, f"publish_dialog_{clicks}")
                     btn.click()
                     clicks += 1
                     clicked_this = True
