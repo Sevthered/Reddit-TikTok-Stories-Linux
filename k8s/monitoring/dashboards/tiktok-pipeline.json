@@ -25,7 +25,7 @@
       "gridPos": {"h": 4, "w": 4, "x": 0, "y": 1},
       "fieldConfig": {"defaults": {"thresholds": {"steps": [
         {"color": "red", "value": null}, {"color": "yellow", "value": 1}, {"color": "green", "value": 2}]}}},
-      "targets": [{"expr": "tiktok_posts_today", "refId": "A"}]
+      "targets": [{"expr": "max(tiktok_posts_today)", "refId": "A"}]
     },
     {
       "type": "stat", "title": "Uploads enabled",
@@ -33,7 +33,7 @@
       "gridPos": {"h": 4, "w": 4, "x": 4, "y": 1},
       "fieldConfig": {"defaults": {"mappings": [
         {"type": "value", "options": {"0": {"text": "OFF", "color": "red"}, "1": {"text": "ON", "color": "green"}}}]}},
-      "targets": [{"expr": "tiktok_uploads_enabled", "refId": "A"}]
+      "targets": [{"expr": "max(tiktok_uploads_enabled)", "refId": "A"}]
     },
     {
       "type": "stat", "title": "Time since last upload",
@@ -41,7 +41,7 @@
       "gridPos": {"h": 4, "w": 5, "x": 8, "y": 1},
       "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"steps": [
         {"color": "green", "value": null}, {"color": "yellow", "value": 46800}, {"color": "red", "value": 90000}]}}},
-      "targets": [{"expr": "time() - tiktok_last_upload_timestamp_seconds", "refId": "A"}]
+      "targets": [{"expr": "time() - max(tiktok_last_upload_timestamp_seconds)", "refId": "A"}]
     },
     {
       "type": "stat", "title": "Session cookie days left",
@@ -49,23 +49,23 @@
       "gridPos": {"h": 4, "w": 4, "x": 13, "y": 1},
       "fieldConfig": {"defaults": {"unit": "d", "thresholds": {"steps": [
         {"color": "red", "value": null}, {"color": "yellow", "value": 3}, {"color": "green", "value": 7}]}}},
-      "targets": [{"expr": "tiktok_sessionid_days_remaining", "refId": "A"}]
+      "targets": [{"expr": "max(tiktok_sessionid_days_remaining)", "refId": "A"}]
     },
     {
       "type": "stat", "title": "Review queue (pending / approved / under-review)",
       "datasource": {"type": "prometheus", "uid": "${datasource}"},
       "gridPos": {"h": 4, "w": 7, "x": 17, "y": 1},
       "targets": [
-        {"expr": "tiktok_pending_review_count", "refId": "A", "legendFormat": "pending"},
-        {"expr": "tiktok_approved_ready_count", "refId": "B", "legendFormat": "approved"},
-        {"expr": "tiktok_under_review_count", "refId": "C", "legendFormat": "under review"}
+        {"expr": "max(tiktok_pending_review_count)", "refId": "A", "legendFormat": "pending"},
+        {"expr": "max(tiktok_approved_ready_count)", "refId": "B", "legendFormat": "approved"},
+        {"expr": "max(tiktok_under_review_count)", "refId": "C", "legendFormat": "under review"}
       ]
     },
     {
       "type": "timeseries", "title": "Posts by status",
       "datasource": {"type": "prometheus", "uid": "${datasource}"},
       "gridPos": {"h": 8, "w": 24, "x": 0, "y": 5},
-      "targets": [{"expr": "tiktok_posts_by_status", "refId": "A", "legendFormat": "{{status}}"}]
+      "targets": [{"expr": "max by (status)(tiktok_posts_by_status)", "refId": "A", "legendFormat": "{{status}}"}]
     },
     {"type": "row", "title": "API (RED)", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 13}},
     {
