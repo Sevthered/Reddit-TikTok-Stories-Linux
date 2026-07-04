@@ -1,10 +1,13 @@
-# Expose the Ceph MGR dashboard at ceph.mk8s.lan. The dashboard serves HTTPS
-# (self-signed) on :8443, so proxy over HTTPS via backend-protocol. ingress-nginx
-# does NOT verify the upstream cert by default, so the self-signed backend works
-# without a snippet (snippet annotations are disabled on this controller for
-# security). It has its own login (user `admin`, password in secret
-# rook-ceph-dashboard-password). Needs a pfSense DNS host-override
-# ceph.mk8s.lan -> 10.10.10.20.
+# Expose the Ceph MGR dashboard at ceph.mk8s.lan over HTTPS. The dashboard
+# serves HTTPS (self-signed) on :8443, so proxy over HTTPS via backend-protocol
+# (ingress-nginx doesn't verify the upstream cert; snippet annotations are
+# disabled on this controller for security). TLS on the ingress is REQUIRED:
+# the dashboard sets its auth JWT as a `Secure` cookie, which browsers drop over
+# plain HTTP -> login won't persist. cert-manager (internal-ca ClusterIssuer,
+# Phase 4) issues the edge cert. Login: user `admin`, password in secret
+# rook-ceph-dashboard-password. Needs pfSense DNS host-override
+# ceph.mk8s.lan -> 10.10.10.20; browser shows an internal-CA warning (proceed,
+# or trust the internal CA).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -12,8 +15,12 @@ metadata:
   namespace: rook-ceph
   annotations:
     nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    cert-manager.io/cluster-issuer: internal-ca
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts: [ceph.mk8s.lan]
+      secretName: ceph-mk8s-tls
   rules:
     - host: ceph.mk8s.lan
       http:
