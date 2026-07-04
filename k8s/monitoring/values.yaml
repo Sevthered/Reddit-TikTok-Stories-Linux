@@ -25,6 +25,11 @@ prometheus:
               storage: 10Gi
 
 grafana:
+  # Recreate (not RollingUpdate): the Grafana PVC is RWO ceph-block, so a surge
+  # pod can't attach while the old one holds it → multi-attach stall on upgrade
+  # (seen in #28). Recreate terminates the old pod first for a clean handoff.
+  deploymentStrategy:
+    type: Recreate
   resources:
     requests:
       cpu: 50m
