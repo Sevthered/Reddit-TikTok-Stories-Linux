@@ -13,8 +13,15 @@ from __future__ import annotations
 import logging
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 
 log = logging.getLogger(__name__)
+
+
+def _systemd_available() -> bool:
+    """True only when running under systemd as PID1 (host), False in containers.
+    Mirrors libsystemd sd_booted() — /run/systemd/system exists iff systemd is init."""
+    return Path("/run/systemd/system").is_dir()
 
 AGENT_LABELS: tuple[str, ...] = (
     "tiktok-bot",
@@ -40,6 +47,8 @@ def _systemctl_snapshot() -> dict[str, tuple[int | None, int | None]]:
     per unit. A unit is `loaded` iff ActiveState in {active, activating}.
     """
     snap: dict[str, tuple[int | None, int | None]] = {}
+    if not _systemd_available():
+        return snap
     for label in AGENT_LABELS:
         unit = f"{label}.service"
         try:
