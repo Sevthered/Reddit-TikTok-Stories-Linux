@@ -4,7 +4,32 @@
 # Ceph PVCs. Grafana routed via ingress-nginx at grafana.mk8s.lan.
 
 alertmanager:
-  enabled: false          # skip for the baseline — saves RAM
+  enabled: true           # wired to Telegram (2026-07-05) — closes the no-notification
+                          # gap that made the mk8s-04 outage silent for 12h.
+  # Routing/receiver config lives in a Secret (token + chat_id kept out of git):
+  #   monitoring/alertmanager-telegram-config (key alertmanager.yaml), built on-node
+  #   from tiktok-secrets TELEGRAM_BOT_TOKEN/CHAT_ID. Route: default -> telegram;
+  #   Watchdog + InfoInhibitor -> null. See wiki/improvements/monitoring-alerting-gap.
+  alertmanagerSpec:
+    configSecret: alertmanager-telegram-config
+    # Pin the alert brain to a control-plane node — keep it OFF mk8s-04 (the
+    # failure-prone pinned app node) so the alerter isn't in the failure domain.
+    nodeSelector:
+      node-role.kubernetes.io/control-plane: "true"
+    resources:
+      requests:
+        cpu: 10m
+        memory: 48Mi
+      limits:
+        memory: 128Mi
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: ceph-block
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 1Gi
 
 prometheus:
   prometheusSpec:
@@ -33,6 +58,14 @@ grafana:
   # (seen in #28). Recreate terminates the old pod first for a clean handoff.
   deploymentStrategy:
     type: Recreate
+  # Wall-panel support (was live in the release but missing from git — re-synced
+  # 2026-07-05): anonymous Viewer + iframe embedding for the Pi kiosk dashboards.
+  grafana.ini:
+    auth.anonymous:
+      enabled: true
+      org_role: Viewer
+    security:
+      allow_embedding: true
   resources:
     requests:
       cpu: 50m
