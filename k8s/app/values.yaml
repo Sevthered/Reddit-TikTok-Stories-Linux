@@ -4,7 +4,7 @@
 
 image:
   repo: 10.10.10.21:5000/tiktok/app
-  tag: "0.1.4"   # skip systemctl probing when not under systemd (webapp /api/status log-spam fix)
+  tag: "0.1.5"   # race-free Xvfb launcher (scripts/xvfb-exec.sh) + CronJob activeDeadlineSeconds — fixes xvfb-run SIGUSR1 hang (bug 2026-07-18)
   pullPolicy: IfNotPresent
 
 # Every data-touching pod pins to ONE node (SQLite single-writer + shared RWO

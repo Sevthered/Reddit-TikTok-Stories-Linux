@@ -8,13 +8,20 @@ fire (startingDeadlineSeconds bounded, no backfill), matching Persistent=false.
 {{- $img := include "tiktok.image" . -}}
 {{- $root := . -}}
 
+{{- /*
+Headed kinds launch Xvfb via `sh scripts/xvfb-exec.sh` (race-free `Xvfb
+-displayfd`), NOT `xvfb-run -a` — the latter's SIGUSR1 ready-handshake can be
+lost, hanging the Job forever with no post (wiki bug 2026-07-18). Every kind
+carries an activeDeadlineSeconds hard wall so a wedged slot self-terminates
+instead of blocking the next slot under concurrencyPolicy: Forbid.
+*/ -}}
 {{- range $job := list
-  (dict "name" "render-0000" "kind" "headed" "schedule" "30 23 * * *" "res" "render" "cmd" (list "xvfb-run" "-a" "python" "scripts/slot.py" "render" "--instance" "0000"))
-  (dict "name" "render-1200" "kind" "headed" "schedule" "30 11 * * *" "res" "render" "cmd" (list "xvfb-run" "-a" "python" "scripts/slot.py" "render" "--instance" "1200"))
-  (dict "name" "upload-0000" "kind" "headed" "schedule" "0 0 * * *"   "res" "upload" "cmd" (list "xvfb-run" "-a" "python" "scripts/slot.py" "upload" "--instance" "0000"))
-  (dict "name" "upload-1200" "kind" "headed" "schedule" "0 12 * * *"  "res" "upload" "cmd" (list "xvfb-run" "-a" "python" "scripts/slot.py" "upload" "--instance" "1200"))
-  (dict "name" "confirm"     "kind" "light"  "schedule" "*/30 * * * *" "res" "light" "cmd" (list "python" "-m" "pipeline.confirm_live"))
-  (dict "name" "retention"   "kind" "light"  "schedule" "0 * * * *"    "res" "light" "cmd" (list "python" "-m" "pipeline.retention"))
+  (dict "name" "render-0000" "kind" "headed" "schedule" "30 23 * * *" "res" "render" "deadline" 1800 "cmd" (list "sh" "scripts/xvfb-exec.sh" "python" "scripts/slot.py" "render" "--instance" "0000"))
+  (dict "name" "render-1200" "kind" "headed" "schedule" "30 11 * * *" "res" "render" "deadline" 1800 "cmd" (list "sh" "scripts/xvfb-exec.sh" "python" "scripts/slot.py" "render" "--instance" "1200"))
+  (dict "name" "upload-0000" "kind" "headed" "schedule" "0 0 * * *"   "res" "upload" "deadline" 1800 "cmd" (list "sh" "scripts/xvfb-exec.sh" "python" "scripts/slot.py" "upload" "--instance" "0000"))
+  (dict "name" "upload-1200" "kind" "headed" "schedule" "0 12 * * *"  "res" "upload" "deadline" 1800 "cmd" (list "sh" "scripts/xvfb-exec.sh" "python" "scripts/slot.py" "upload" "--instance" "1200"))
+  (dict "name" "confirm"     "kind" "light"  "schedule" "*/30 * * * *" "res" "light" "deadline" 300 "cmd" (list "python" "-m" "pipeline.confirm_live"))
+  (dict "name" "retention"   "kind" "light"  "schedule" "0 * * * *"    "res" "light" "deadline" 300 "cmd" (list "python" "-m" "pipeline.retention"))
 }}
 ---
 apiVersion: batch/v1
@@ -34,6 +41,9 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      # Hard wall across all retries: a wedged slot fails instead of hanging
+      # into the next fire (headed render/upload heavy → 30m; light → 5m).
+      activeDeadlineSeconds: {{ $job.deadline }}
       backoffLimit: 2
       template:
         metadata:
