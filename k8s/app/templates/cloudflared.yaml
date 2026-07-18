@@ -54,12 +54,23 @@ spec:
           args: ["tunnel", "--config", "/etc/cloudflared/config.yaml", "run"]
           ports:
             - { name: metrics, containerPort: 2000 }
+          # Liveness on /metrics (edge-INDEPENDENT: 200 whenever the process +
+          # HTTP server are alive), NOT /ready (which reflects edge-connection
+          # state → a WAN/edge blip returned 503 → kubelet SIGKILL → restart loop,
+          # observed both replicas cycling 2026-07-17). A genuinely wedged process
+          # still fails /metrics and restarts. No readiness probe: cloudflared is
+          # not Service-routed for traffic, and readiness=/ready would drop the pod
+          # from the headless metrics Service when edge is down = lose scrape when
+          # you most need it; the cloudflared_tunnel_ha_connections gauge carries
+          # the edge-down signal instead. See wiki tech-books-review-full-2026-07-17 (M2).
           livenessProbe:
             httpGet:
-              path: /ready
+              path: /metrics
               port: metrics
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.cloudflared.resources | nindent 12 }}
           volumeMounts:
