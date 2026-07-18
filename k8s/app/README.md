@@ -15,8 +15,11 @@ FS). See `wiki/sources/2026-07-03-k8s-migration-handoff.md` and
 | `cronjobs.yaml` | 6 CronJobs | render 23:30/11:30, upload 00:00/12:00, confirm */30, retention hourly (Europe/Madrid) |
 | `pvc.yaml` | PVC `tiktok-data` | `ceph-block` RWO, mounted `/app/data` everywhere |
 
-render/upload run headed Chromium under `xvfb-run -a` with `HOME=/app/.chromium-home`
-+ a 1Gi `/dev/shm`.
+render/upload run headed Chromium under `sh scripts/xvfb-exec.sh` (a race-free
+`Xvfb -displayfd` launcher — NOT `xvfb-run -a`, whose SIGUSR1 ready-handshake can
+hang the Job forever; see wiki bug 2026-07-18) with `HOME=/app/.chromium-home` +
+a 1Gi `/dev/shm`. Every CronJob also sets `activeDeadlineSeconds` (headed 1800s /
+light 300s) so a wedged slot self-terminates instead of blocking the next fire.
 
 ## Phase 6 = safe non-posting posture (defaults)
 `bot.replicas: 0`, `cronjobs.suspend: true` — nothing posts to TikTok, no
