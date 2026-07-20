@@ -21,6 +21,8 @@ spec:
         {{- include "tiktok.labels" . | nindent 8 }}
         app.kubernetes.io/component: bot
     spec:
+      # Bot never calls the K8s API — don't mount a SA token (CIS 5.1.6).
+      automountServiceAccountToken: false
       nodeSelector:
         {{- toYaml .Values.pinNodeSelector | nindent 8 }}
       securityContext:
@@ -29,6 +31,8 @@ spec:
         - name: bot
           image: {{ include "tiktok.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "tiktok.containerSecurityContext" . | nindent 12 }}
           command: ["python", "scripts/run_bot.py"]
           env:
             {{- include "tiktok.commonEnv" . | nindent 12 }}
@@ -39,6 +43,16 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ .Values.secretName }}
+          # Liveness = heartbeat freshness. run_callback_bot touches
+          # /app/logs/bot.heartbeat each poll cycle (long-poll ≤25s); if it goes
+          # stale the getUpdates loop is wedged and the kubelet restarts the pod
+          # (otherwise it sits 1/1 Running while dead).
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "find /app/logs/bot.heartbeat -mmin -3 | grep -q ."]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 2
           resources:
             {{- toYaml .Values.resources.light | nindent 12 }}
           volumeMounts:

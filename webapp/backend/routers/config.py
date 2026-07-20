@@ -29,17 +29,19 @@ log = logging.getLogger("webapp.routers.config")
 
 router = APIRouter(prefix="/config", tags=["config"])
 
-# Heuristic: any env key whose name contains one of these tokens has its
-# value masked in GET /api/config/env. Extend as more secrets land.
-_SECRET_MARKERS: tuple[str, ...] = (
-    "TOKEN", "SECRET", "PASSWORD", "PASS", "KEY", "COOKIE",
-    "EMAIL", "HANDLE", "CHAT_ID",
+# Mask by default (allowlist), not blacklist: a new/unknown env key is treated
+# as secret and masked in GET /api/config/env unless its name clearly marks it
+# non-sensitive. Inverting the old substring-blacklist closes the gap where an
+# unmatched secret key leaked its value in full ([[Excessive-Data-Exposure]]).
+_NON_SECRET_MARKERS: tuple[str, ...] = (
+    "HOST", "PORT", "MODE", "LEVEL", "ENABLED", "TIMEOUT",
+    "WINDOW", "MARGIN", "TZ", "OFFSET", "LIMIT",
 )
 
 
 def _is_secret(key: str) -> bool:
     up = key.upper()
-    return any(m in up for m in _SECRET_MARKERS)
+    return not any(m in up for m in _NON_SECRET_MARKERS)
 
 
 def _mask(value: str) -> str:
@@ -230,6 +232,12 @@ def get_env(request: Request) -> EnvOut:
 @router.put("/env/{key}", response_model=EnvEntry)
 @limiter.limit(settings.RATE_LIMIT_DEFAULT)
 def put_env(request: Request, key: str, payload: EnvPut) -> EnvEntry:
+    # Guard against line injection into /etc/tiktok/environment: a newline in
+    # the value (or a newline/`=` in the key) would forge extra KEY=VALUE lines.
+    if "\n" in key or "\r" in key or "=" in key:
+        raise HTTPException(422, detail="key may not contain '=', newline, or CR")
+    if "\n" in payload.value or "\r" in payload.value:
+        raise HTTPException(422, detail="value may not contain newlines")
     path = settings.ENV_PATH
     if not path.exists():
         raise HTTPException(404, detail=f"{path} missing")

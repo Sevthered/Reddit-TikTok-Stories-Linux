@@ -114,13 +114,16 @@ if DEV_MODE:
 # locally, not acceptable behind a real deployment.
 CSRF_SECRET: str = os.environ.get("WEBAPP_CSRF_SECRET", "")
 if not CSRF_SECRET:
-    CSRF_SECRET = secrets.token_hex(32)
     if not DEV_MODE:
-        _log.warning(
-            "WEBAPP_CSRF_SECRET not set — using a random per-boot secret. "
-            "Every restart invalidates outstanding CSRF tokens. Set "
-            "WEBAPP_CSRF_SECRET via systemd EnvironmentFile= for prod."
+        # Fail fast in prod: a random per-boot secret silently invalidates
+        # every outstanding CSRF token on each restart and hides a
+        # misconfiguration. Refuse to start instead ([[API-Security-Misconfiguration]]).
+        raise RuntimeError(
+            "WEBAPP_CSRF_SECRET must be set in production — provide it via the "
+            "k8s Secret / systemd EnvironmentFile. Refusing to start with a "
+            "random per-boot secret."
         )
+    CSRF_SECRET = secrets.token_hex(32)
 
 # Internal service token — authenticates trusted loopback callers (the
 # Telegram bot via core/webapp_client.py) that reach this API off the

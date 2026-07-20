@@ -88,7 +88,9 @@ class TikTokDBCollector(Collector):
                 yield by_status
 
                 yield GaugeMetricFamily(
-                    "tiktok_used_stories_total",
+                    # Gauge, not a counter — no `_total` suffix (that suffix
+                    # implies a monotonic counter and misleads rate()).
+                    "tiktok_used_stories_count",
                     "Total rows in the used/dedup corpus", value=total)
                 yield GaugeMetricFamily(
                     "tiktok_posts_today",

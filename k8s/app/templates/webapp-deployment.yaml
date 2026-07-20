@@ -20,6 +20,8 @@ spec:
         {{- include "tiktok.labels" . | nindent 8 }}
         app.kubernetes.io/component: webapp
     spec:
+      # Pods never call the K8s API — don't mount a SA token (CIS 5.1.6).
+      automountServiceAccountToken: false
       nodeSelector:
         {{- toYaml .Values.pinNodeSelector | nindent 8 }}
       securityContext:
@@ -33,6 +35,8 @@ spec:
         - name: db-init
           image: {{ include "tiktok.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "tiktok.containerSecurityContext" . | nindent 12 }}
           command:
             - sh
             - -c
@@ -48,6 +52,11 @@ spec:
         - name: webapp
           image: {{ include "tiktok.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # NOTE: no hardened container securityContext here — the webapp spawns
+          # headed Chromium (manual render/upload via JobManager) whose sandbox
+          # needs privilege-escalation. Hardening requires adding --no-sandbox to
+          # the Playwright launches first (cover.py:183, upload.py:126) — tracked
+          # as a follow-up. automountServiceAccountToken:false still applies.
           # baked CMD = uvicorn webapp.backend.app:app --host 0.0.0.0 --port 8765
           ports:
             - { name: http, containerPort: 8765 }
@@ -98,6 +107,8 @@ spec:
         - name: litestream
           image: {{ include "tiktok.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- include "tiktok.containerSecurityContext" . | nindent 12 }}
           command: ["litestream", "replicate", "-config", "/etc/litestream/litestream.yml"]
           env:
             - name: LITESTREAM_R2_ENDPOINT

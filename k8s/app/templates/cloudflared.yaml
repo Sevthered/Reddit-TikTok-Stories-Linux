@@ -48,6 +48,8 @@ spec:
         {{- include "tiktok.labels" . | nindent 8 }}
         app.kubernetes.io/component: cloudflared
     spec:
+      # cloudflared never calls the K8s API — don't mount a SA token (CIS 5.1.6).
+      automountServiceAccountToken: false
       containers:
         - name: cloudflared
           image: {{ .Values.cloudflared.image }}

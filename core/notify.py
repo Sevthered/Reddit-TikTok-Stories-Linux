@@ -827,6 +827,13 @@ def run_callback_bot(db, *, notifier: Notifier | None = None,
     notifier = notifier or Notifier.from_env()
     start = time.monotonic()
 
+    # Liveness heartbeat: touch a file each poll cycle so a k8s exec probe can
+    # detect a wedged getUpdates loop (the pod otherwise stays 1/1 Running while
+    # dead). Default path lives under logs/; disable with BOT_HEARTBEAT_FILE="".
+    heartbeat = os.environ.get("BOT_HEARTBEAT_FILE", "logs/bot.heartbeat")
+    if heartbeat:
+        Path(heartbeat).parent.mkdir(parents=True, exist_ok=True)
+
     _register_bot_commands(notifier)
 
     offset_raw = db.get_config(_CFG_TG_OFFSET, "0") or "0"
@@ -841,6 +848,12 @@ def run_callback_bot(db, *, notifier: Notifier | None = None,
         if stop_after_s is not None and time.monotonic() - start > stop_after_s:
             log.info("telegram bot: stop_after_s elapsed, returning")
             return
+
+        if heartbeat:
+            try:
+                Path(heartbeat).touch()
+            except OSError as e:
+                log.warning("heartbeat touch failed: %s", e)
 
         updates = notifier.poll_updates(offset)
         for u in updates:

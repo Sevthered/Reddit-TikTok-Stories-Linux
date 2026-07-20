@@ -16,6 +16,7 @@ Three distinct surfaces, deliberately split (kube-books [[Kubernetes-Probes]]):
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, Response
@@ -75,16 +76,18 @@ def health(db: Db = Depends(get_db)) -> dict[str, Any]:
     JSON body (HTTP 200) the SvelteKit health card can render."""
     db_ok, cfg_ok, cfg_err = _probe_deps(db)
 
+    # Report file BASENAMES only — the health card just needs the filename;
+    # exposing absolute server paths is needless disclosure ([[Excessive-Data-Exposure]]).
     return {
         "ok": db_ok and cfg_ok,
         "db_reachable": db_ok,
-        "db_path": str(settings.DB_PATH),
+        "db_path": Path(str(settings.DB_PATH)).name,
         "config_loaded": cfg_ok,
-        "config_path": str(settings.CONFIG_PATH),
+        "config_path": Path(str(settings.CONFIG_PATH)).name,
         "config_error": cfg_err,
         "env_path_exists": settings.ENV_PATH.exists(),
         "cookies_exists": settings.COOKIES_PATH.exists(),
-        "logs_dir": str(settings.LOGS_DIR),
+        "logs_dir": Path(str(settings.LOGS_DIR)).name,
         "dev_mode": settings.DEV_MODE,
         "post_tz": str(settings.POST_TZ),
         "madrid_offset_hours": settings.madrid_tz_offset_hours(),

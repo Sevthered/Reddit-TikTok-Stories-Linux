@@ -52,6 +52,8 @@ spec:
             app.kubernetes.io/component: {{ $job.name }}
         spec:
           restartPolicy: Never
+          # Pipeline jobs never call the K8s API — don't mount a SA token (CIS 5.1.6).
+          automountServiceAccountToken: false
           nodeSelector:
             {{- toYaml $root.Values.pinNodeSelector | nindent 12 }}
           securityContext:
@@ -60,6 +62,10 @@ spec:
             - name: {{ $job.name }}
               image: {{ $img }}
               imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+              # NOTE: no hardened container securityContext — render/upload jobs
+              # launch headed Chromium whose sandbox needs privilege-escalation
+              # (no --no-sandbox in cover.py/upload.py). Follow-up: add --no-sandbox
+              # then harden. automountServiceAccountToken:false still applies.
               command: {{ $job.cmd | toJson }}
               env:
                 {{- include "tiktok.commonEnv" $root | nindent 16 }}

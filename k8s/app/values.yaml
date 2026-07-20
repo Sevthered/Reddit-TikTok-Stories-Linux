@@ -4,7 +4,7 @@
 
 image:
   repo: 10.10.10.21:5000/tiktok/app
-  tag: "0.1.6"   # tech-books majors: health probe split (/api/live + /api/ready 503), Telegram token redaction, urllib→TikTokApiError wrap, tiktok_auth_rejected_total counter
+  tag: "0.1.7"   # tech-books minors: env-PUT injection guard, mask-by-default, /api/health path redaction, CSRF fail-fast, tiktok response guard, caller-IP logs, webapp logging cfg, bot.log env-gate, gauge rename, bot heartbeat
   pullPolicy: IfNotPresent
 
 # Every data-touching pod pins to ONE node (SQLite single-writer + shared RWO
@@ -85,7 +85,7 @@ cloudflared:
   replicas: 2
   secretName: tiktok-cloudflared   # key: credentials.json
   tunnelName: tiktok-webapp
-  originService: http://10.10.10.20
+  originService: http://ingress-nginx-controller.ingress-nginx.svc.cluster.local   # Service DNS, not the MetalLB IP (survives IP reassignment)
   originHostHeader: tiktok.mk8s.lan
   hostname: webapp.sebgoncre.online
   resources:

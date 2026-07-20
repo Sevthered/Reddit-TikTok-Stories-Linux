@@ -178,19 +178,30 @@ def video_list(max_count: int = 20, cursor: int | None = None,
 
     url = f"{VIDEO_LIST_URL}?fields={urllib.parse.quote(fields)}"
     resp = _post_json(url, payload, at)
-    err = resp.get("error", {})
-    if err and err.get("code") not in ("", "ok", None):
+    # Defend the confirm-live worker against a malformed API response: a
+    # non-dict body, non-dict `error`, or non-numeric `create_time` must not
+    # crash the loop — surface it as TikTokApiError / skip the bad row.
+    if not isinstance(resp, dict):
+        raise TikTokApiError(f"video.list: unexpected response type {type(resp).__name__}")
+    err = resp.get("error")
+    if isinstance(err, dict) and err.get("code") not in ("", "ok", None):
         raise TikTokApiError(f"video.list failed: {err}")
 
-    data = resp.get("data", {})
+    data = resp.get("data") or {}
     videos: list[Video] = []
-    for v in data.get("videos", []):
+    for v in (data.get("videos") or []):
+        if not isinstance(v, dict):
+            continue
+        try:
+            create_time = int(v.get("create_time", 0) or 0)
+        except (TypeError, ValueError):
+            create_time = 0
         videos.append(Video(
             id=str(v.get("id", "")),
             title=v.get("title", "") or "",
             share_url=_canonical_share_url(v.get("share_url", "") or ""),
             cover_image_url=v.get("cover_image_url", "") or "",
-            create_time=int(v.get("create_time", 0)),
+            create_time=create_time,
             description=v.get("video_description", "") or "",
         ))
     return videos, data.get("cursor"), bool(data.get("has_more", False))

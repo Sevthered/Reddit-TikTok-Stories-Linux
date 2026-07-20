@@ -45,6 +45,15 @@ from webapp.backend.routers import (
 
 log = logging.getLogger("webapp")
 
+# uvicorn configures its own uvicorn.* loggers but leaves the root untouched,
+# so the app's log.info() lines were dropped (root's last-resort handler only
+# emits WARNING+, unformatted). Configure a formatted stderr root handler once
+# at import so INFO surfaces in `kubectl logs` ([[Logging-Best-Practices]]).
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s :: %(message)s",
+)
+
 
 # ---- CSRF (double-submit cookie) -------------------------------------------
 #
@@ -96,6 +105,14 @@ def _is_trusted_internal(request: Request) -> bool:
         return False
     return secrets.compare_digest(
         request.headers.get("x-internal-token", ""), settings.INTERNAL_TOKEN,
+    )
+
+
+def _caller_ip(request: Request) -> str:
+    """Best-effort client IP for security logs — the real edge IP arrives in
+    CF-Connecting-IP (set by Cloudflare), else the socket peer."""
+    return request.headers.get("cf-connecting-ip") or (
+        request.client.host if request.client else "?"
     )
 
 
@@ -175,7 +192,7 @@ async def host_allowlist(request: Request, call_next):
         return await call_next(request)
     host = (request.headers.get("host") or "").lower()
     if host not in settings.ALLOWED_HOSTS:
-        log.warning("rejected host header %r from %s", host, request.client)
+        log.warning("rejected host header %r from %s", host, _caller_ip(request))
         metrics.AUTH_REJECTED.labels(reason="host").inc()
         return PlainTextResponse(
             f"Host header not allowed: {host!r}", status_code=400,
@@ -202,13 +219,13 @@ async def cf_access_middleware(request: Request, call_next):
         return await call_next(request)
     token = request.headers.get("cf-access-jwt-assertion")
     if not token:
-        log.warning("missing Cf-Access-Jwt-Assertion on %s %s", request.method, request.url.path)
+        log.warning("missing Cf-Access-Jwt-Assertion on %s %s from %s", request.method, request.url.path, _caller_ip(request))
         metrics.AUTH_REJECTED.labels(reason="cf_access_missing").inc()
         return JSONResponse(status_code=403, content={"detail": "missing Cloudflare Access assertion"})
     try:
         verify_access_jwt(token)
     except CfAccessError as exc:
-        log.warning("Cf-Access-Jwt-Assertion failed on %s %s: %s", request.method, request.url.path, exc)
+        log.warning("Cf-Access-Jwt-Assertion failed on %s %s from %s: %s", request.method, request.url.path, _caller_ip(request), exc)
         metrics.AUTH_REJECTED.labels(reason="cf_access_invalid").inc()
         return JSONResponse(status_code=403, content={"detail": "invalid Cloudflare Access assertion"})
     return await call_next(request)
@@ -233,7 +250,7 @@ async def csrf_protect_middleware(request: Request, call_next):
         try:
             await csrf_protect.validate_csrf(request)
         except CsrfProtectError as exc:
-            log.warning("CSRF check failed: %s %s (%s)", request.method, request.url.path, exc.message)
+            log.warning("CSRF check failed: %s %s from %s (%s)", request.method, request.url.path, _caller_ip(request), exc.message)
             metrics.AUTH_REJECTED.labels(reason="csrf").inc()
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
     return await call_next(request)
@@ -253,7 +270,7 @@ async def origin_allowlist_middleware(request: Request, call_next):
     ):
         origin = request.headers.get("origin")
         if origin and origin not in settings.ALLOWED_ORIGINS:
-            log.warning("rejected Origin %r on %s %s", origin, request.method, request.url.path)
+            log.warning("rejected Origin %r on %s %s from %s", origin, request.method, request.url.path, _caller_ip(request))
             metrics.AUTH_REJECTED.labels(reason="origin").inc()
             return JSONResponse(status_code=403, content={"detail": f"Origin not allowed: {origin!r}"})
     return await call_next(request)
