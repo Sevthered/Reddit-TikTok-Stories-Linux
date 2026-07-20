@@ -64,22 +64,28 @@ spec:
                 name: {{ .Values.secretName }}
           readinessProbe:
             httpGet:
-              path: /api/health
+              path: /api/ready
               port: http
-              # /api/health is Cf-Access-exempt; send an allowlisted Host so the
+              # /api/ready is Cf-Access-exempt; send an allowlisted Host so the
               # DNS-rebinding host-allowlist doesn't 400 the kubelet probe.
+              # Returns 503 when the DB/config is unreachable → pod pulled from
+              # the Service until it recovers.
               httpHeaders:
                 - { name: Host, value: "tiktok-webapp:8765" }
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
-              path: /api/health
+              # Liveness = process-up only (no dep checks) so a dead DB never
+              # triggers a restart loop the restart can't fix.
+              path: /api/live
               port: http
               httpHeaders:
                 - { name: Host, value: "tiktok-webapp:8765" }
             initialDelaySeconds: 30
             periodSeconds: 20
+            timeoutSeconds: 5
           resources:
             {{- toYaml .Values.resources.webapp | nindent 12 }}
           volumeMounts:

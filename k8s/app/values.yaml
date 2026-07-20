@@ -4,7 +4,7 @@
 
 image:
   repo: 10.10.10.21:5000/tiktok/app
-  tag: "0.1.5"   # race-free Xvfb launcher (scripts/xvfb-exec.sh) + CronJob activeDeadlineSeconds — fixes xvfb-run SIGUSR1 hang (bug 2026-07-18)
+  tag: "0.1.6"   # tech-books majors: health probe split (/api/live + /api/ready 503), Telegram token redaction, urllib→TikTokApiError wrap, tiktok_auth_rejected_total counter
   pullPolicy: IfNotPresent
 
 # Every data-touching pod pins to ONE node (SQLite single-writer + shared RWO

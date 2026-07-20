@@ -73,9 +73,10 @@ _CSRF_EXEMPT_PATHS = {"/api/csrf"}
 # Paths exempt from Cf-Access-Jwt-Assertion verification, applied to every
 # method (unlike the CSRF/origin exemptions above, which only guard
 # mutating verbs). /api/health is hit directly over loopback by the
-# deploy script and systemd health checks — that path never traverses
-# the Tunnel, so it never carries the header.
-_CF_ACCESS_EXEMPT_PATHS = {"/api/health"}
+# deploy script and systemd health checks; /api/live + /api/ready are the
+# kubelet liveness/readiness probes — none traverse the Tunnel, so none
+# carry the header.
+_CF_ACCESS_EXEMPT_PATHS = {"/api/health", "/api/live", "/api/ready"}
 
 
 def _is_trusted_internal(request: Request) -> bool:
@@ -175,6 +176,7 @@ async def host_allowlist(request: Request, call_next):
     host = (request.headers.get("host") or "").lower()
     if host not in settings.ALLOWED_HOSTS:
         log.warning("rejected host header %r from %s", host, request.client)
+        metrics.AUTH_REJECTED.labels(reason="host").inc()
         return PlainTextResponse(
             f"Host header not allowed: {host!r}", status_code=400,
         )
@@ -201,11 +203,13 @@ async def cf_access_middleware(request: Request, call_next):
     token = request.headers.get("cf-access-jwt-assertion")
     if not token:
         log.warning("missing Cf-Access-Jwt-Assertion on %s %s", request.method, request.url.path)
+        metrics.AUTH_REJECTED.labels(reason="cf_access_missing").inc()
         return JSONResponse(status_code=403, content={"detail": "missing Cloudflare Access assertion"})
     try:
         verify_access_jwt(token)
     except CfAccessError as exc:
         log.warning("Cf-Access-Jwt-Assertion failed on %s %s: %s", request.method, request.url.path, exc)
+        metrics.AUTH_REJECTED.labels(reason="cf_access_invalid").inc()
         return JSONResponse(status_code=403, content={"detail": "invalid Cloudflare Access assertion"})
     return await call_next(request)
 
@@ -230,6 +234,7 @@ async def csrf_protect_middleware(request: Request, call_next):
             await csrf_protect.validate_csrf(request)
         except CsrfProtectError as exc:
             log.warning("CSRF check failed: %s %s (%s)", request.method, request.url.path, exc.message)
+            metrics.AUTH_REJECTED.labels(reason="csrf").inc()
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
     return await call_next(request)
 
@@ -249,6 +254,7 @@ async def origin_allowlist_middleware(request: Request, call_next):
         origin = request.headers.get("origin")
         if origin and origin not in settings.ALLOWED_ORIGINS:
             log.warning("rejected Origin %r on %s %s", origin, request.method, request.url.path)
+            metrics.AUTH_REJECTED.labels(reason="origin").inc()
             return JSONResponse(status_code=403, content={"detail": f"Origin not allowed: {origin!r}"})
     return await call_next(request)
 

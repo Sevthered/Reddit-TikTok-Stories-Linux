@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from prometheus_client import REGISTRY, start_http_server
+from prometheus_client import REGISTRY, Counter, start_http_server
 from prometheus_client.core import GaugeMetricFamily
 from prometheus_client.registry import Collector
 
@@ -29,6 +29,17 @@ from webapp.backend import settings
 log = logging.getLogger("webapp.metrics")
 
 _started = False
+
+# Auth/CSRF rejections by cause. Incremented from app.py's security
+# middlewares. Distinguishes rejection reason (host / cf_access_missing /
+# cf_access_invalid / csrf / origin) which the RED status-code counter can't.
+# Lives on the default REGISTRY (served on :METRICS_PORT); increments are cheap
+# no-ops when the metrics server isn't started.
+AUTH_REJECTED = Counter(
+    "tiktok_auth_rejected_total",
+    "Requests rejected by the webapp auth/CSRF middlewares, by reason",
+    ["reason"],
+)
 
 
 def instrument(app) -> None:

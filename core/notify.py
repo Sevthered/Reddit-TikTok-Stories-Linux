@@ -37,6 +37,13 @@ class NotifierError(RuntimeError):
     pass
 
 
+def _redact(msg: str, token: str) -> str:
+    """Mask the bot token if it appears in an error string. `requests`
+    exceptions embed the full request URL (`.../bot<token>/method`), so a
+    raw network error would otherwise leak the token into logs."""
+    return msg.replace(token, "<TOKEN>") if token else msg
+
+
 @dataclass(frozen=True)
 class NotifierEnv:
     token: str
@@ -78,13 +85,13 @@ class Notifier:
             else:
                 resp = requests.post(url, data=payload, files=files, timeout=timeout)
         except requests.RequestException as e:
-            raise NotifierError(f"telegram {method} network error: {e}") from e
+            raise NotifierError(_redact(f"telegram {method} network error: {e}", self.token)) from e
         try:
             body = resp.json()
         except ValueError as e:
-            raise NotifierError(f"telegram {method} non-JSON response: {resp.text[:200]!r}") from e
+            raise NotifierError(_redact(f"telegram {method} non-JSON response: {resp.text[:200]!r}", self.token)) from e
         if not body.get("ok"):
-            raise NotifierError(f"telegram {method} failed: {body}")
+            raise NotifierError(_redact(f"telegram {method} failed: {body}", self.token))
         return body.get("result") or {}
 
     def _get(self, method: str, params: dict[str, Any] | None = None,
@@ -93,10 +100,10 @@ class Notifier:
         try:
             resp = requests.get(url, params=params or {}, timeout=timeout)
         except requests.RequestException as e:
-            raise NotifierError(f"telegram {method} network error: {e}") from e
+            raise NotifierError(_redact(f"telegram {method} network error: {e}", self.token)) from e
         body = resp.json()
         if not body.get("ok"):
-            raise NotifierError(f"telegram {method} failed: {body}")
+            raise NotifierError(_redact(f"telegram {method} failed: {body}", self.token))
         return body.get("result") or {}
 
     # ---------------- Outbound: text / photo / edits ----------------

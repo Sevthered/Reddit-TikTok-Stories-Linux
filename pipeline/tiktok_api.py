@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -58,8 +59,11 @@ def _post_form(url: str, data: dict, headers: dict | None = None) -> dict:
     if headers:
         hdr.update(headers)
     req = urllib.request.Request(url, data=body, headers=hdr)
-    with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
+            return json.loads(resp.read())
+    except (urllib.error.URLError, TimeoutError) as e:
+        raise TikTokApiError(f"POST {url} failed: {e}") from e
 
 
 def _post_json(url: str, payload: dict, access_token: str) -> dict:
@@ -72,8 +76,11 @@ def _post_json(url: str, payload: dict, access_token: str) -> dict:
             "Authorization": f"Bearer {access_token}",
         },
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
+            return json.loads(resp.read())
+    except (urllib.error.URLError, TimeoutError) as e:
+        raise TikTokApiError(f"POST {url} failed: {e}") from e
 
 
 def _load_cache() -> dict:
