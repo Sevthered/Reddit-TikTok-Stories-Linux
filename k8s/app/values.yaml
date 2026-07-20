@@ -91,3 +91,19 @@ cloudflared:
   resources:
     requests: { memory: 64Mi, cpu: 25m }
     limits: { memory: 128Mi, cpu: 200m }
+
+# k8s-native nightly secrets backup (replaces the systemd-era mk8s-04 job that
+# backed up stale files). age-encrypts the LIVE k8s Secrets + PVC session state
+# to R2. Disabled by default; the cutover enables it once tiktok-r2-backup exists.
+secretsBackup:
+  enabled: false
+  schedule: "15 1 * * *"          # 01:15 UTC nightly
+  activeDeadlineSeconds: 300
+  r2SecretName: tiktok-r2-backup  # keys: R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_ENDPOINT
+  r2Bucket: webapp-bucket
+  # PUBLIC age recipient key — the matching private key lives ONLY in the
+  # operator's password manager (never on-cluster). Safe to commit.
+  ageRecipient: age1f34hmgp6kehnf8m7a2w8dvfkd4wf4dne3x5azyx5ywu8nu69gvus2e686t
+  resources:
+    requests: { memory: 64Mi, cpu: 25m }
+    limits: { memory: 256Mi, cpu: 300m }

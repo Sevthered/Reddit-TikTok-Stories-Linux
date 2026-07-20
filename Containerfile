@@ -33,6 +33,17 @@ RUN curl -fsSL "https://github.com/benbjohnson/litestream/releases/download/v${L
  && rm /tmp/litestream.tar.gz \
  && litestream version
 
+# age (pinned) — the in-cluster secrets-backup CronJob age-encrypts the live
+# k8s Secrets + PVC session state to R2 with an operator-only recipient key
+# (private key never on-cluster). Static Go binary, same one-image pattern.
+ARG AGE_VERSION=1.2.1
+RUN curl -fsSL "https://github.com/FiloSottile/age/releases/download/v${AGE_VERSION}/age-v${AGE_VERSION}-linux-amd64.tar.gz" \
+      -o /tmp/age.tar.gz \
+ && tar -xzf /tmp/age.tar.gz -C /tmp \
+ && mv /tmp/age/age /usr/local/bin/age \
+ && rm -rf /tmp/age.tar.gz /tmp/age \
+ && age --version
+
 WORKDIR /app
 
 # Python deps. requirements.txt auto-skips mlx-whisper (darwin marker).
